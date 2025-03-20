@@ -1,101 +1,196 @@
-/* ===== Global Reset / Body Setup ===== */
-body {
-    margin: 0;
-    padding: 0;
-    font-family: Arial, sans-serif;
-    background-color: #f4f4f4; /* Slight gray background to contrast the container */
+/* ===== Layout Container ===== */
+.home-wrapper {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ===== Sidebar ===== */
+.sidebar {
+  background-color: #fff;
+  width: 60px; /* Collapsed width */
+  transition: width 0.3s ease, opacity 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Hide sidebar in search mode on small screens */
+.sidebar.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar.open {
+  width: 200px;
+}
+
+.hamburger {
+  cursor: pointer;
+  margin: 1rem 0;
+  font-size: 1.5rem;
+  color: #333;
+}
+
+.nav-list {
+  list-style: none;
+  padding: 0;
+  margin-top: 2rem;
+  width: 100%;
+}
+
+.nav-list li {
+  width: 100%;
+  height: 60px; /* Matches collapsed sidebar for square buttons */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #333;
+  transition: background-color 0.2s ease;
+}
+
+.nav-list li:hover {
+  background-color: #f4f4f4;
+}
+
+.nav-list li .icon {
+  font-size: 1.5rem;
+}
+
+.nav-list li span {
+  display: none;
+}
+
+.sidebar.open .nav-list li {
+  justify-content: flex-start;
+  padding-left: 1rem;
+}
+
+.sidebar.open .nav-list li span {
+  display: inline;
+  margin-left: 0.5rem;
+}
+
+/* ===== Main Section ===== */
+.main-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== Top Bar ===== */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 60px; /* Fixed height for consistent alignment */
+  padding: 0 1rem;
+  background-color: #fff;
+  transition: all 0.3s ease;
+}
+
+/* In search-active mode (only on small screens), hide left/right areas */
+.top-bar.search-active .left-area,
+.top-bar.search-active .right-area {
+  display: none;
+}
+
+/* The center-area search container will expand in search-active mode */
+.top-bar.search-active .center-area .search-container {
+  width: 100%;
+  max-width: none;
+}
+
+/* Left and Right Areas (default) */
+.left-area,
+.right-area {
+  width: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Center Area */
+.center-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ===== Search Container ===== */
+.search-container {
+  display: flex;
+  align-items: center;
+  background-color: #f4f4f4;
+  border-radius: 4px;
+  padding: 0.3rem 0.6rem;
+  width: 100%;
+  max-width: 400px; /* Optional max width */
+}
+
+.search-icon {
+  font-size: 1.5rem;
+  margin-right: 0.5rem;
+  color: #666;
+}
+
+.search-container input {
+  border: none;
+  background: none;
+  outline: none;
+  width: 100%;
+  font-size: 1.5rem;
+}
+
+/* ===== Profile Icon ===== */
+.profile-icon {
+  font-size: 1.5rem;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+}
+
+/* ===== Search Button ===== */
+.search-button {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: #333;
+  cursor: pointer;
+  margin-right: 0.5rem;
+}
+
+/* ===== Responsive Styles ===== */
+@media (max-width: 768px) {
+  /* On small screens, hide navigation items (Home, Chats, Calendar) if sidebar is not open */
+  .sidebar:not(.open) .nav-list {
+    display: none;
+  }
+  
+  /* Default on small screens (when NOT in search-active mode):
+     - Hide the center search container so it doesn’t take space,
+     - Show the search button in the right area. */
+  .top-bar:not(.search-active) .center-area .search-container {
+    display: none;
+  }
+  .top-bar:not(.search-active) .right-area .search-button {
+    display: inline-block;
+  }
+}
+
+@media (min-width: 769px) {
+  /* On larger screens, always show the search container */
+  .center-area .search-container {
     display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
   }
-  
-  /* ===== Container mimicking a phone screen ===== */
-  .app-container {
-    width: 100%;
-    max-width: 390px; /* Common mobile width (iPhone ~390px) */
-    height: 800px;    /* Just an example height to resemble a phone screen */
-    background-color: #fff;
-    border-radius: 20px;
-    box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
+  /* Hide the search button on larger screens */
+  .search-button {
+    display: none;
   }
-  
-  /* ===== Top Bar / Search Section ===== */
-  .search-container {
-    background-color: #fff;
-    padding: 1rem;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-  }
-  
-  .search-wrapper {
-    background-color: #f4f4f4;
-    border-radius: 25px;
-    padding: 0.5rem 1rem;
-    display: flex;
-    align-items: center;
-  }
-  
-  .search-icon {
-    width: 18px;
-    height: 18px;
-    margin-right: 8px;
-    opacity: 0.6;
-  }
-  
-  .search-box {
-    flex: 1;
-    border: none;
-    background-color: transparent;
-    font-size: 1rem;
-    outline: none;
-    color: #333;
-  }
-  
-  .search-box::placeholder {
-    color: #aaa;
-  }
-  
-  /* ===== Main Content ===== */
-  .content {
-    flex-grow: 1; /* fill the remaining space */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background-color: #fafafa;
-  }
-  
-  .content h2 {
-    font-size: 1.6rem;
-    color: #333;
-  }
-  
-  /* ===== Bottom Navigation Bar ===== */
-  .nav-bar {
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    background-color: #fff;
-    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
-    padding: 0.75rem 0;
-  }
-  
-  .nav-button {
-    flex: 1;
-    text-align: center;
-    color: #007bff;
-    text-decoration: none;
-    font-size: 1.5rem;
-    transition: color 0.3s ease;
-  }
-  
-  .nav-button:hover {
-    color: #0056b3;
-  }
-  
-  .nav-button i {
-    pointer-events: none; /* so clicking the icon doesn't highlight text */
-  }
-  
+}

@@ -1,0 +1,15 @@
+.content {
+    padding: 2rem;
+    font-family: Arial, sans-serif;
+    background-color: #ffffff;  /* A clean white background */
+    min-height: calc(100vh - 60px); /* Adjusts for the top bar height */
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  h1 {
+    margin-bottom: 1rem;
+    color: #333;
+  }

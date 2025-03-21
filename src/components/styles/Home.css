@@ -1,5 +1,5 @@
 /* ===== Layout Container ===== */
-.home-wrapper {
+.page-wrapper {
   display: flex;
   width: 100%;
   height: 100vh;
@@ -16,7 +16,6 @@
   align-items: center;
 }
 
-/* Hide sidebar in search mode on small screens */
 .sidebar.hidden {
   opacity: 0;
   pointer-events: none;
@@ -42,7 +41,7 @@
 
 .nav-list li {
   width: 100%;
-  height: 60px; /* Matches collapsed sidebar for square buttons */
+  height: 60px; /* Ensures square buttons when collapsed */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -85,25 +84,25 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 60px; /* Fixed height for consistent alignment */
+  height: 60px; /* Fixed height */
   padding: 0 1rem;
   background-color: #fff;
   transition: all 0.3s ease;
 }
 
-/* In search-active mode (only on small screens), hide left/right areas */
+/* In search-active mode (on small screens), hide left/right areas */
 .top-bar.search-active .left-area,
 .top-bar.search-active .right-area {
   display: none;
 }
 
-/* The center-area search container will expand in search-active mode */
+/* When search is active, expand the search container */
 .top-bar.search-active .center-area .search-container {
   width: 100%;
   max-width: none;
 }
 
-/* Left and Right Areas (default) */
+/* ===== Left, Center, Right Areas ===== */
 .left-area,
 .right-area {
   width: 60px;
@@ -112,7 +111,6 @@
   justify-content: center;
 }
 
-/* Center Area */
 .center-area {
   flex: 1;
   display: flex;
@@ -128,7 +126,7 @@
   border-radius: 4px;
   padding: 0.3rem 0.6rem;
   width: 100%;
-  max-width: 400px; /* Optional max width */
+  max-width: 400px;
 }
 
 .search-icon {
@@ -142,11 +140,13 @@
   background: none;
   outline: none;
   width: 100%;
-  font-size: 1.5rem;
+  font-size: 1rem;
 }
 
-/* ===== Profile Icon ===== */
+/* ===== Profile Icon & Dropdown ===== */
 .profile-icon {
+  position: relative;
+  cursor: pointer;
   font-size: 1.5rem;
   width: 60px;
   height: 60px;
@@ -156,7 +156,40 @@
   color: #333;
 }
 
-/* ===== Search Button ===== */
+.dropdown-menu {
+  position: absolute;
+  top: 110%; /* Positions the dropdown just below the profile icon */
+  right: 0;
+  background-color: red; /* Red background */
+  border: 1px solid #cc0000;
+  border-radius: 4px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+  z-index: 100;
+}
+
+.dropdown-menu button {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  padding: 0.5rem 1rem;
+  width: 100%;
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.dropdown-menu button:hover {
+  background-color: #b30000;
+}
+
+.dropdown-icon {
+  margin-right: 0.5rem;
+  font-size: 1rem;
+}
+
+/* ===== Search Button (for small screens) ===== */
 .search-button {
   background: none;
   border: none;
@@ -168,24 +201,24 @@
 
 /* ===== Responsive Styles ===== */
 @media (max-width: 768px) {
-  /* On small screens, hide navigation items (Home, Chats, Calendar) if sidebar is not open */
+  /* On small screens, hide nav items if sidebar is not open */
   .sidebar:not(.open) .nav-list {
     display: none;
   }
   
-  /* Default on small screens (when NOT in search-active mode):
-     - Hide the center search container so it doesn’t take space,
-     - Show the search button in the right area. */
+  /* Hide the center search container unless active */
   .top-bar:not(.search-active) .center-area .search-container {
     display: none;
   }
+  
+  /* Show the search button on small screens */
   .top-bar:not(.search-active) .right-area .search-button {
     display: inline-block;
   }
 }
 
 @media (min-width: 769px) {
-  /* On larger screens, always show the search container */
+  /* Always show the search container on larger screens */
   .center-area .search-container {
     display: flex;
   }

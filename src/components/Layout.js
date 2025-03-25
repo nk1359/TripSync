@@ -1,21 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaSearch, FaUser, FaSignOutAlt } from 'react-icons/fa';
 import Sidebar from './Sidebar';
-import './styles/Layout.css'; // You can combine these styles with Home.css if desired
+import './styles/Layout.css';
 
 const Layout = ({ children }) => {
   const navigate = useNavigate();
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [isSearchActive, setIsSearchActive] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [user, setUser] = useState(null);
+
+  // Retrieve user info from localStorage on component mount
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+  }, []);
 
   const toggleNav = () => setIsNavOpen(!isNavOpen);
   const handleSearchButtonClick = () => setIsSearchActive(true);
   const handleSearchBlur = () => setIsSearchActive(false);
   const handleProfileClick = () => setDropdownOpen(!dropdownOpen);
+
   const handleSignOut = () => {
-    // Optional: Clear any authentication tokens or state here.
+    localStorage.removeItem('user');
     navigate('/');
   };
 
@@ -44,6 +54,7 @@ const Layout = ({ children }) => {
               <FaUser />
               {dropdownOpen && (
                 <div className="dropdown-menu">
+                  <div className="dropdown-header">Hello, {user ? user.first_name : 'User'}</div>
                   <button onClick={handleSignOut}>
                     <FaSignOutAlt className="dropdown-icon" />
                     <span>Sign Out</span>

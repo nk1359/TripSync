@@ -160,8 +160,8 @@
   position: absolute;
   top: 110%; /* Positions the dropdown just below the profile icon */
   right: 0;
-  background-color: red; /* Red background */
-  border: 1px solid #cc0000;
+  background-color: rgb(255, 255, 255); /* Red background */
+  border: 1px solid #ffffff;
   border-radius: 4px;
   box-shadow: 0 2px 5px rgba(0,0,0,0.15);
   z-index: 100;
@@ -175,13 +175,9 @@
   border: none;
   padding: 0.5rem 1rem;
   width: 100%;
-  color: #fff;
+  color: #000000;
   font-size: 1rem;
   cursor: pointer;
-}
-
-.dropdown-menu button:hover {
-  background-color: #b30000;
 }
 
 .dropdown-icon {

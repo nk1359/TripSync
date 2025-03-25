@@ -18,10 +18,10 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      // Replace the URL with your backend login endpoint
       const res = await axios.post('http://localhost:5000/api/login', loginData);
       if (res.data.success) {
-        // Redirect to the homepage on successful login
+        // Store the user information (e.g., first_name) in localStorage
+        localStorage.setItem('user', JSON.stringify(res.data.user));
         navigate('/home');
       } else {
         setError('Invalid credentials. Please try again.');

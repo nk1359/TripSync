@@ -1,0 +1,42 @@
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { StreamChat } from 'stream-chat';
+
+const ChatClientContext = createContext(null);
+
+export const ChatClientProvider = ({ children }) => {
+  const [chatClient, setChatClient] = useState(null);
+  const apiKey = process.env.REACT_APP_STREAM_API_KEY;
+  console.log("Stream API Key:", apiKey); // Verify this is not undefined
+
+  useEffect(() => {
+    const client = StreamChat.getInstance(apiKey);
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      const user = JSON.parse(storedUser);
+      const userId = user.user_id; // adjust as needed
+      client.connectUser(
+        {
+          id: userId,
+          name: `${user.first_name} ${user.last_name}`,
+          image: user.profile_image || 'default_image_url',
+        },
+        client.devToken(userId)
+      );
+    } else {
+      console.error('No user data found in localStorage.');
+    }
+    setChatClient(client);
+    return () => {
+      client.disconnectUser();
+    };
+  }, [apiKey]);
+
+  if (!chatClient) return null;
+  return (
+    <ChatClientContext.Provider value={chatClient}>
+      {children}
+    </ChatClientContext.Provider>
+  );
+};
+
+export const useChatClient = () => useContext(ChatClientContext);

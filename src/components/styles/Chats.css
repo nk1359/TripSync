@@ -1,15 +1,112 @@
-.content {
-    padding: 2rem;
-    font-family: Arial, sans-serif;
-    background-color: #f9f9f9;
-    min-height: calc(100vh - 60px); /* Accounts for the top bar height */
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+.chats-container {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  background: #f2f2f2;
+}
+
+.chat-list-container {
+  flex: 0 0 350px; /* fixed width for the left panel */
+  background: #fff;
+  overflow-y: auto;
+  border-right: 1px solid #ddd;
+  padding: 15px;
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.05);
+}
+
+.chats-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  border-bottom: 1px solid #ddd;
+}
+
+.search-bar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: #f1f1f1;
+  padding: 10px;
+  border-radius: 20px;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 1rem;
+  padding-left: 10px;
+  color: #333;
+}
+
+.search-icon {
+  color: #888;
+}
+
+/* NEW GROUP BUTTON */
+.new-group-button {
+  margin-left: 10px;
+  background: #0084ff;
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background 0.3s ease;
+}
+
+.new-group-button:hover {
+  background: #006bbf;
+}
+
+.chat-list {
+  margin-top: 10px;
+}
+
+.chat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: #fff;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+  border: 1px solid transparent;
+}
+
+.chat-item:hover {
+  background: #f9f9f9;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  border-color: #ddd;
+}
+
+.chat-details {
+  flex: 1;
+  padding-left: 10px;
+  color: #333;
+}
+
+.delete-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #e74c3c;
+  font-size: 1rem;
+}
+
+/* WRAPPER FOR THE CHAT ROOM */
+.chat-room-wrapper {
+  flex: 1;              /* fill remaining space */
+  display: flex;        /* so ChatRoom can stretch */
+}
+
+@media (max-width: 768px) {
+  .chat-list-container {
+    width: 100%;
   }
-  
-  h1 {
-    margin-bottom: 1rem;
-    color: #333;
-  }
+}

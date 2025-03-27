@@ -3,6 +3,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import Home from './components/Home';
 import Chats from './components/Chats';
+import ChatRoom from './components/ChatRoom';  // Import new ChatRoom component
 import Calendar from './components/Calendar';
 
 function App() {
@@ -12,6 +13,7 @@ function App() {
         <Route path="/" element={<Login />} />
         <Route path="/home" element={<Home />} />
         <Route path="/chats" element={<Chats />} />
+        <Route path="/chats/:groupId" element={<ChatRoom />} />  {/* New route for individual chat */}
         <Route path="/calendar" element={<Calendar />} />
         <Route path="/register" element={<Register />} />
       </Routes>

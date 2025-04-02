@@ -322,16 +322,6 @@
   --hover-color: #e9ecef;
 }
 
-/* Dark Mode Variables */
-.dark-mode {
-  --bg-color: #121212;
-  --card-bg: #1e1e1e;
-  --heading-color: #e9ecef;
-  --text-color: #ced4da;
-  --secondary-text: #adb5bd;
-  --hover-color: #2d2d2d;
-}
-
 .category-tabs {
   display: flex;
   justify-content: center;

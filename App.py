@@ -241,7 +241,230 @@ def delete_group(group_id):
     except mysql.connector.Error as err:
         print("MySQL Error:", err)
         return jsonify({'error': str(err)}), 500
+    
+@app.route('/api/top-places', methods=['GET'])
+def get_top_places():
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
 
+        # Modified query to group places by category instead of city
+        query = """
+        SELECT 
+            p.category,
+            p.id AS place_id,
+            p.name AS place_name,
+            c.city_name,
+            pi.image_url
+        FROM places p
+        JOIN cities c ON p.city_id = c.id
+        LEFT JOIN (
+            SELECT place_id, MIN(image_url) AS image_url
+            FROM places_images
+            GROUP BY place_id
+        ) pi ON pi.place_id = p.id
+        WHERE p.id IN (
+            SELECT id FROM (
+                SELECT id,
+                       ROW_NUMBER() OVER (PARTITION BY category ORDER BY id) AS rn
+                FROM places
+            ) AS ranked
+            WHERE rn <= 5
+        )
+        ORDER BY p.category, c.city_name, p.id;
+        """
+
+        cursor.execute(query)
+        results = cursor.fetchall()
+
+        # Structure the data: group places under each category
+        grouped = {}
+        for row in results:
+            category = row['category']
+            place = {
+                'place_id': row['place_id'],
+                'place_name': row['place_name'],
+                'city_name': row['city_name'],
+                'image_url': row['image_url']
+            }
+            grouped.setdefault(category, []).append(place)
+
+        return jsonify(grouped), 200
+
+    except mysql.connector.Error as err:
+        print("MySQL Error:", err)
+        return jsonify({'error': str(err)}), 500
+
+    finally:
+        if conn:
+            conn.close()
+
+
+# Endpoint to get top 5 cities with their top 5 places
+@app.route('/api/top-cities', methods=['GET'])
+def get_top_cities():
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+
+        # First get top 5 cities (you could adjust criteria for what makes a city "top")
+        cities_query = """
+        SELECT c.id, c.city_name
+        FROM cities c 
+        ORDER BY c.id
+        LIMIT 5
+        """
+        cursor.execute(cities_query)
+        cities = cursor.fetchall()
+        
+        result = {}
+        
+        # For each city, get its top 5 places
+        for city in cities:
+            city_id = city['id']
+            city_name = city['city_name']
+            
+            places_query = """
+            SELECT 
+                p.id AS place_id,
+                p.name AS place_name,
+                p.category,
+                pi.image_url,
+                '4.5' AS rating
+            FROM places p
+            LEFT JOIN (
+                SELECT place_id, MIN(image_url) AS image_url
+                FROM places_images
+                GROUP BY place_id
+            ) pi ON pi.place_id = p.id
+            WHERE p.city_id = %s
+            LIMIT 5
+            """
+            
+            cursor.execute(places_query, (city_id,))
+            places = cursor.fetchall()
+            
+            result[city_name] = places
+            
+        return jsonify(result), 200
+
+    except mysql.connector.Error as err:
+        print("MySQL Error:", err)
+        return jsonify({'error': str(err)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# Endpoint to get all categories
+@app.route('/api/categories', methods=['GET'])
+def get_categories():
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        query = """
+        SELECT DISTINCT category 
+        FROM places 
+        WHERE category IS NOT NULL AND category != ''
+        ORDER BY category
+        """
+        
+        cursor.execute(query)
+        categories = cursor.fetchall()
+        
+        # Extract just the category names as a list
+        category_list = [item['category'] for item in categories]
+        
+        return jsonify(category_list), 200
+        
+    except mysql.connector.Error as err:
+        print("MySQL Error:", err)
+        return jsonify({'error': str(err)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# Endpoint to get places by category with pagination and search
+@app.route('/api/places', methods=['GET'])
+def get_places():
+    try:
+        category = request.args.get('category', '')
+        search_term = request.args.get('search', '')
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+        
+        offset = (page - 1) * per_page
+        
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        params = []
+        where_clauses = []
+        
+        # Add category filter if specified
+        if category and category != 'All':
+            where_clauses.append("p.category = %s")
+            params.append(category)
+        
+        # Add search filter if specified
+        if search_term:
+            where_clauses.append("(p.name LIKE %s OR c.city_name LIKE %s)")
+            search_pattern = f"%{search_term}%"
+            params.extend([search_pattern, search_pattern])
+        
+        # Construct WHERE clause
+        where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
+        
+        # Query for places with pagination
+        query = f"""
+        SELECT 
+            p.id AS place_id,
+            p.name AS place_name,
+            p.category,
+            c.city_name,
+            pi.image_url,
+            '4.5' AS rating
+        FROM places p
+        JOIN cities c ON p.city_id = c.id
+        LEFT JOIN (
+            SELECT place_id, MIN(image_url) AS image_url
+            FROM places_images
+            GROUP BY place_id
+        ) pi ON pi.place_id = p.id
+        WHERE {where_clause}
+        ORDER BY p.name
+        LIMIT %s OFFSET %s
+        """
+        
+        params.extend([per_page, offset])
+        cursor.execute(query, params)
+        places = cursor.fetchall()
+        
+        # Get total count for pagination
+        count_query = f"""
+        SELECT COUNT(*) as total
+        FROM places p
+        JOIN cities c ON p.city_id = c.id
+        WHERE {where_clause}
+        """
+        
+        cursor.execute(count_query, params[:-2] if params else [])
+        total = cursor.fetchone()['total']
+        
+        return jsonify({
+            'places': places,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'total_pages': (total + per_page - 1) // per_page
+        }), 200
+        
+    except mysql.connector.Error as err:
+        print("MySQL Error:", err)
+        return jsonify({'error': str(err)}), 500
+    finally:
+        if conn:
+            conn.close()
 
 if __name__ == '__main__':
     app.run(debug=True)

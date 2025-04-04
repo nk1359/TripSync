@@ -3,7 +3,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import Home from './components/Home';
 import Chats from './components/Chats';
-import ChatRoom from './components/ChatRoom';  // Import new ChatRoom component
+import ChatRoom from './components/ChatRoom'; 
 import Calendar from './components/Calendar';
 
 function App() {

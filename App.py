@@ -217,7 +217,7 @@ def add_friend_to_group():
     data = request.get_json()
     group_id = data.get('group_id')
     friend_id = data.get('friend_id')
-    user_id = data.get('user_id')  # Current user ID
+    user_id = data.get('user_id')
 
     if not group_id or not friend_id or not user_id:
         return jsonify({'error': 'Missing required fields'}), 400
@@ -227,31 +227,6 @@ def add_friend_to_group():
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor(dictionary=True)
 
-        # Get username of current user
-        cursor.execute("SELECT username FROM users WHERE user_id = %s", (user_id,))
-        user = cursor.fetchone()
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        username = user['username']
-
-        # Check if current user is a member of the group
-        cursor.execute("SELECT 1 FROM group_members WHERE group_id = %s AND username = %s", 
-                       (group_id, username))
-        is_member = cursor.fetchone()
-        if not is_member:
-            return jsonify({'error': 'You are not a member of this group'}), 403
-
-        # Check if they're actually friends
-        check_query = """
-        SELECT 1 FROM friends
-        WHERE ((user_id = %s AND friend_id = %s) OR (user_id = %s AND friend_id = %s))
-        AND status = 'accepted'
-        """
-        cursor.execute(check_query, (user_id, friend_id, friend_id, user_id))
-        is_friend = cursor.fetchone()
-        if not is_friend:
-            return jsonify({'error': 'This user is not your friend'}), 403
-
         # Get the friend's username
         cursor.execute("SELECT username FROM users WHERE user_id = %s", (friend_id,))
         friend = cursor.fetchone()
@@ -259,21 +234,15 @@ def add_friend_to_group():
             return jsonify({'error': 'Friend not found'}), 404
         friend_username = friend['username']
 
-        # Check if friend is already in the group
-        cursor.execute("SELECT 1 FROM group_members WHERE group_id = %s AND username = %s", 
-                       (group_id, friend_username))
-        already_member = cursor.fetchone()
-        if already_member:
-            return jsonify({'message': 'User is already a member of this group'}), 200
-
         # Add the friend to the group
         cursor.execute("INSERT INTO group_members (group_id, username) VALUES (%s, %s)", 
                        (group_id, friend_username))
         conn.commit()
 
         return jsonify({'message': 'Friend added to group successfully'}), 201
+
     except mysql.connector.Error as err:
-        print("MySQL Error:", err)
+        conn.rollback()
         return jsonify({'error': str(err)}), 500
     finally:
         if conn:
@@ -805,6 +774,525 @@ def get_places():
             'total_pages': (total + per_page - 1) // per_page
         }), 200
         
+    except mysql.connector.Error as err:
+        print("MySQL Error:", err)
+        return jsonify({'error': str(err)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# New endpoint to get place details including address
+@app.route('/api/place/<int:place_id>', methods=['GET'])
+def get_place_details(place_id):
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        query = """
+        SELECT 
+            p.id, 
+            p.name, 
+            p.category,
+            p.address,
+            c.city_name
+        FROM places p
+        JOIN cities c ON p.city_id = c.id
+        WHERE p.id = %s
+        """
+        
+        cursor.execute(query, (place_id,))
+        place = cursor.fetchone()
+        
+        if not place:
+            return jsonify({"error": "Place not found"}), 404
+            
+        return jsonify(place), 200
+        
+    except mysql.connector.Error as err:
+        print("MySQL Error:", err)
+        return jsonify({"error": str(err)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# Calendar API Endpoints
+@app.route('/api/calendar/events', methods=['GET'])
+def get_calendar_events():
+    user_id = request.args.get('user_id')
+    group_id = request.args.get('group_id')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    if not user_id:
+        return jsonify({"error": "User ID is required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Build the query dynamically based on provided parameters
+        query = """
+        SELECT 
+            ce.event_id,
+            ce.title,
+            ce.description,
+            ce.start_date,
+            ce.end_date,
+            ce.location,
+            ce.place_id,
+            ce.group_id,
+            ce.created_by,
+            cg.name AS group_name,
+            u.first_name,
+            u.last_name,
+            u.username,
+            p.name AS place_name,
+            p.address AS place_address,
+            p.category AS place_category,
+            c.city_name
+        FROM calendar_events ce
+        JOIN chat_groups cg ON ce.group_id = cg.id
+        JOIN users u ON ce.created_by = u.user_id
+        LEFT JOIN places p ON ce.place_id = p.id
+        LEFT JOIN cities c ON p.city_id = c.id
+        WHERE ce.group_id IN (
+            SELECT group_id 
+            FROM group_members 
+            WHERE username = (SELECT username FROM users WHERE user_id = %s)
+        )
+        """
+        
+        params = [user_id]
+        
+        # Add optional filters
+        if group_id:
+            query += " AND ce.group_id = %s"
+            params.append(group_id)
+        
+        if start_date:
+            query += " AND ce.start_date >= %s"
+            params.append(start_date)
+        
+        if end_date:
+            query += " AND ce.start_date <= %s"
+            params.append(end_date)
+        
+        query += " ORDER BY ce.start_date ASC"
+        
+        cursor.execute(query, params)
+        events = cursor.fetchall()
+        
+        # Format dates for JSON response
+        for event in events:
+            event['start_date'] = event['start_date'].isoformat() if event['start_date'] else None
+            event['end_date'] = event['end_date'].isoformat() if event['end_date'] else None
+        
+        return jsonify({"events": events}), 200
+    
+    except mysql.connector.Error as err:
+        print("MySQL Error:", err)
+        return jsonify({"error": str(err)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/calendar/events', methods=['POST'])
+def create_calendar_event():
+    data = request.get_json()
+    required_fields = ["title", "start_date", "group_id", "created_by"]
+    
+    if not all(field in data for field in required_fields):
+        return jsonify({"error": "Missing required fields"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get username of current user
+        cursor.execute("SELECT username FROM users WHERE user_id = %s", (data['created_by'],))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        username = user['username']
+        
+        # Check if user is a member of the group
+        cursor.execute("SELECT 1 FROM group_members WHERE group_id = %s AND username = %s", 
+                      (data['group_id'], username))
+        is_member = cursor.fetchone()
+        if not is_member:
+            return jsonify({"error": "You are not a member of this group"}), 403
+        
+        # Create the event
+        insert_query = """
+        INSERT INTO calendar_events 
+        (title, description, start_date, end_date, location, place_id, group_id, created_by)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        
+        values = (
+            data['title'],
+            data.get('description'),
+            data['start_date'],
+            data.get('end_date'),
+            data.get('location'),
+            data.get('place_id'),
+            data['group_id'],
+            data['created_by']
+        )
+        
+        cursor.execute(insert_query, values)
+        event_id = cursor.lastrowid
+        conn.commit()
+        
+        # Add the creator as a participant
+        cursor.execute(
+            "INSERT INTO event_participants (event_id, user_id) VALUES (%s, %s)",
+            (event_id, data['created_by'])
+        )
+        conn.commit()
+        
+        # Get the newly created event
+        cursor.execute("""
+        SELECT 
+            ce.event_id,
+            ce.title,
+            ce.description,
+            ce.start_date,
+            ce.end_date,
+            ce.location,
+            ce.place_id,
+            ce.group_id,
+            cg.name AS group_name
+        FROM calendar_events ce
+        JOIN chat_groups cg ON ce.group_id = cg.id
+        WHERE ce.event_id = %s
+        """, (event_id,))
+        
+        new_event = cursor.fetchone()
+        
+        # Format dates for JSON response
+        if new_event:
+            new_event['start_date'] = new_event['start_date'].isoformat() if new_event['start_date'] else None
+            new_event['end_date'] = new_event['end_date'].isoformat() if new_event['end_date'] else None
+        
+        return jsonify({"event": new_event, "message": "Event created successfully"}), 201
+    
+    except mysql.connector.Error as err:
+        print("MySQL Error:", err)
+        return jsonify({"error": str(err)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/calendar/events/<int:event_id>', methods=['PUT'])
+def update_calendar_event(event_id):
+    data = request.get_json()
+    user_id = data.get('user_id')
+    
+    if not user_id:
+        return jsonify({"error": "User ID is required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if the event exists and the user is the creator
+        cursor.execute("""
+        SELECT created_by, group_id FROM calendar_events 
+        WHERE event_id = %s
+        """, (event_id,))
+        
+        event = cursor.fetchone()
+        if not event:
+            return jsonify({"error": "Event not found"}), 404
+        
+        # Only the creator can update the event
+        if int(event['created_by']) != int(user_id):
+            return jsonify({"error": "Only the event creator can update it"}), 403
+        
+        # Build update query
+        update_fields = []
+        update_values = []
+        
+        if 'title' in data:
+            update_fields.append("title = %s")
+            update_values.append(data['title'])
+        
+        if 'description' in data:
+            update_fields.append("description = %s")
+            update_values.append(data['description'])
+        
+        if 'start_date' in data:
+            update_fields.append("start_date = %s")
+            update_values.append(data['start_date'])
+        
+        if 'end_date' in data:
+            update_fields.append("end_date = %s")
+            update_values.append(data['end_date'])
+        
+        if 'location' in data:
+            update_fields.append("location = %s")
+            update_values.append(data['location'])
+        
+        if 'place_id' in data:
+            update_fields.append("place_id = %s")
+            update_values.append(data['place_id'])
+        
+        if not update_fields:
+            return jsonify({"message": "No fields to update"}), 200
+        
+        update_query = "UPDATE calendar_events SET " + ", ".join(update_fields) + " WHERE event_id = %s"
+        update_values.append(event_id)
+        
+        cursor.execute(update_query, update_values)
+        conn.commit()
+        
+        # Get the updated event
+        cursor.execute("""
+        SELECT 
+            ce.event_id,
+            ce.title,
+            ce.description,
+            ce.start_date,
+            ce.end_date,
+            ce.location,
+            ce.place_id,
+            ce.group_id,
+            cg.name AS group_name
+        FROM calendar_events ce
+        JOIN chat_groups cg ON ce.group_id = cg.id
+        WHERE ce.event_id = %s
+        """, (event_id,))
+        
+        updated_event = cursor.fetchone()
+        
+        # Format dates for JSON response
+        if updated_event:
+            updated_event['start_date'] = updated_event['start_date'].isoformat() if updated_event['start_date'] else None
+            updated_event['end_date'] = updated_event['end_date'].isoformat() if updated_event['end_date'] else None
+        
+        return jsonify({"event": updated_event, "message": "Event updated successfully"}), 200
+    
+    except mysql.connector.Error as err:
+        print("MySQL Error:", err)
+        return jsonify({"error": str(err)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/calendar/events/<int:event_id>', methods=['DELETE'])
+def delete_calendar_event(event_id):
+    user_id = request.args.get('user_id')
+    
+    if not user_id:
+        return jsonify({"error": "User ID is required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if the event exists and the user is the creator
+        cursor.execute("""
+        SELECT created_by, group_id FROM calendar_events 
+        WHERE event_id = %s
+        """, (event_id,))
+        
+        event = cursor.fetchone()
+        if not event:
+            return jsonify({"error": "Event not found"}), 404
+        
+        # Only the creator can delete the event
+        if int(event['created_by']) != int(user_id):
+            return jsonify({"error": "Only the event creator can delete it"}), 403
+        
+        # Delete the event (participants will be cascaded)
+        cursor.execute("DELETE FROM calendar_events WHERE event_id = %s", (event_id,))
+        conn.commit()
+        
+        return jsonify({"message": "Event deleted successfully"}), 200
+    
+    except mysql.connector.Error as err:
+        print("MySQL Error:", err)
+        return jsonify({"error": str(err)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/calendar/events/<int:event_id>/participants', methods=['GET'])
+def get_event_participants(event_id):
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        query = """
+        SELECT 
+            ep.user_id,
+            ep.status,
+            u.username,
+            u.first_name,
+            u.last_name
+        FROM event_participants ep
+        JOIN users u ON ep.user_id = u.user_id
+        WHERE ep.event_id = %s
+        """
+        
+        cursor.execute(query, (event_id,))
+        participants = cursor.fetchall()
+        
+        return jsonify({"participants": participants}), 200
+    
+    except mysql.connector.Error as err:
+        print("MySQL Error:", err)
+        return jsonify({"error": str(err)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/calendar/events/<int:event_id>/participants', methods=['POST'])
+def update_participant_status(event_id):
+    data = request.get_json()
+    user_id = data.get('user_id')
+    status = data.get('status')
+    
+    if not user_id or not status:
+        return jsonify({"error": "User ID and status are required"}), 400
+    
+    if status not in ['attending', 'maybe', 'declined']:
+        return jsonify({"error": "Invalid status. Must be 'attending', 'maybe', or 'declined'"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if the event exists
+        cursor.execute("SELECT group_id FROM calendar_events WHERE event_id = %s", (event_id,))
+        event = cursor.fetchone()
+        if not event:
+            return jsonify({"error": "Event not found"}), 404
+        
+        # Check if the user is a member of the group
+        cursor.execute("""
+        SELECT 1 FROM group_members 
+        WHERE group_id = %s AND username = (SELECT username FROM users WHERE user_id = %s)
+        """, (event['group_id'], user_id))
+        is_member = cursor.fetchone()
+        if not is_member:
+            return jsonify({"error": "You must be a member of the group to participate in its events"}), 403
+        
+        # Check if the user is already a participant
+        cursor.execute("SELECT status FROM event_participants WHERE event_id = %s AND user_id = %s", 
+                      (event_id, user_id))
+        participant = cursor.fetchone()
+        
+        if participant:
+            # Update existing status
+            cursor.execute("""
+            UPDATE event_participants SET status = %s 
+            WHERE event_id = %s AND user_id = %s
+            """, (status, event_id, user_id))
+        else:
+            # Add new participant
+            cursor.execute("""
+            INSERT INTO event_participants (event_id, user_id, status) 
+            VALUES (%s, %s, %s)
+            """, (event_id, user_id, status))
+        
+        conn.commit()
+        
+        return jsonify({"message": f"Participant status updated to '{status}'"}), 200
+    
+    except mysql.connector.Error as err:
+        print("MySQL Error:", err)
+        return jsonify({"error": str(err)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/calendar/groups/<int:user_id>', methods=['GET'])
+def get_user_calendar_groups(user_id):
+    """Get the groups where the user is a member for calendar selection"""
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get username of the user
+        cursor.execute("SELECT username FROM users WHERE user_id = %s", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        username = user['username']
+        
+        # Get groups where the user is a member
+        query = """
+        SELECT g.id, g.name 
+        FROM chat_groups g
+        JOIN group_members gm ON g.id = gm.group_id
+        WHERE gm.username = %s
+        ORDER BY g.name
+        """
+        cursor.execute(query, (username,))
+        groups = cursor.fetchall()
+        
+        return jsonify({"groups": groups}), 200
+    except mysql.connector.Error as err:
+        print("MySQL Error:", err)
+        return jsonify({"error": str(err)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@app.route('/api/leave_group', methods=['POST'])
+def leave_group():
+    data = request.get_json()
+    group_id = data.get('group_id')
+    user_id = data.get('user_id')
+    
+    if not group_id or not user_id:
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get the username of the user
+        cursor.execute("SELECT username, first_name, last_name FROM users WHERE user_id = %s", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        username = user['username']
+        full_name = f"{user['first_name']} {user['last_name']}"
+        
+        # Check if the user is a member of the group
+        cursor.execute("SELECT 1 FROM group_members WHERE group_id = %s AND username = %s", 
+                      (group_id, username))
+        is_member = cursor.fetchone()
+        if not is_member:
+            return jsonify({'error': 'User is not a member of this group'}), 403
+        
+        # Remove the user from the group
+        cursor.execute("DELETE FROM group_members WHERE group_id = %s AND username = %s", 
+                      (group_id, username))
+        conn.commit()
+        
+        # Add a message using the user's username as sender (instead of 'System')
+        # This way we avoid the foreign key constraint issue
+        cursor.execute(
+            "INSERT INTO messages (group_id, sender, message) VALUES (%s, %s, %s)",
+            (group_id, username, f"{full_name} has left the group")
+        )
+        conn.commit()
+        
+        return jsonify({'message': 'Successfully left the group'}), 200
     except mysql.connector.Error as err:
         print("MySQL Error:", err)
         return jsonify({'error': str(err)}), 500

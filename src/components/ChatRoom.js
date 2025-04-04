@@ -5,7 +5,7 @@ import './styles/ChatRoom.css';
 
 const ChatRoom = ({ groupId, groupName, onBack }) => {
   const [messages, setMessages] = useState([]);
-  const [message, setMessage] = useState('');
+  const [messageText, setMessageText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [showOptions, setShowOptions] = useState(false);
   
@@ -53,24 +53,24 @@ const ChatRoom = ({ groupId, groupName, onBack }) => {
   }, [messages]);
 
   const sendMessage = () => {
-    if (!message.trim()) return;
+    if (!messageText.trim()) return;
 
     // Optimistically update UI
     const newMessage = { 
       sender: currentUsername, 
-      message: message.trim(),
+      message: messageText.trim(),
       timestamp: new Date().toISOString() 
     };
     
     setMessages([...messages, newMessage]);
-    setMessage('');
+    setMessageText('');
 
     // Then send to server
     axios
       .post('http://localhost:5000/api/send_message', {
         group_id: groupId,
-        sender: currentUsername,  // Use username instead of user_id
-        message: message.trim(),
+        sender: currentUsername,
+        message: messageText.trim(),
       })
       .catch((err) => {
         console.error("Error sending message:", err.response?.data || err.message);
@@ -83,6 +83,18 @@ const ChatRoom = ({ groupId, groupName, onBack }) => {
       e.preventDefault();
       sendMessage();
     }
+  };
+
+  // Calculate message size class based on content length
+  const getMessageSizeClass = (content) => {
+    if (!content) return '';
+    
+    const length = content.length;
+    if (length <= 10) return 'message-xs';
+    if (length <= 30) return 'message-sm';
+    if (length <= 100) return 'message-md';
+    if (length <= 300) return 'message-lg';
+    return 'message-xl';
   };
 
   // Format timestamp for display
@@ -173,10 +185,13 @@ const ChatRoom = ({ groupId, groupName, onBack }) => {
                 // Check if this is a consecutive message from the same sender
                 const isConsecutive = index > 0 && msgs[index - 1].sender === msg.sender;
                 
+                // Get message size class based on content length
+                const sizeClass = getMessageSizeClass(msg.message);
+                
                 return (
                   <div
                     key={index}
-                    className={`message ${isSent ? 'sent' : 'received'} ${isConsecutive ? 'consecutive' : ''}`}
+                    className={`message ${isSent ? 'sent' : 'received'} ${isConsecutive ? 'consecutive' : ''} ${sizeClass}`}
                   >
                     <div className="message-content">
                       {!isSent && !isConsecutive && <span className="sender-name">{msg.sender}</span>}
@@ -196,8 +211,8 @@ const ChatRoom = ({ groupId, groupName, onBack }) => {
         <input
           type="text"
           placeholder="Type a message..."
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
+          value={messageText}
+          onChange={(e) => setMessageText(e.target.value)}
           onKeyDown={handleKeyDown}
           className="message-input"
           ref={inputRef}
@@ -206,7 +221,7 @@ const ChatRoom = ({ groupId, groupName, onBack }) => {
         <button 
           onClick={sendMessage} 
           className="send-button"
-          disabled={!message.trim()}
+          disabled={!messageText.trim()}
           aria-label="Send message"
         >
           <FaPaperPlane />

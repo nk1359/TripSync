@@ -269,36 +269,26 @@ const Chats = () => {
     setShowLeaveGroupModal(true);
   };
 
-  // Renderers
-  const renderSidebar = () => {
-    const shouldShowSidebar = !isMobile || !selectedGroup;
-    
-    if (!shouldShowSidebar) return null;
-    
+  const renderChatsList = () => {
     return (
-      <div className={`sidebar ${isMobile && selectedGroup ? 'hidden' : ''}`}>
-        <div className="sidebar-header">
-          <h2 className="sidebar-title">Your Chats</h2>
-          <button 
-            className="create-group-btn" 
-            onClick={openCreateModal}
-            aria-label="Create new group"
-          >
+      <div className="chats-sidebar">
+        <div className="chats-header">
+          <h2>Messages</h2>
+          <button className="create-group-btn" onClick={openCreateModal}>
             <FaPlus /> New Group
           </button>
         </div>
         
-        {/* Add Search Bar Component */}
         <ChatSearchBar onSearch={handleGroupSearch} />
         
         <div className="groups-list">
           {isLoading ? (
-            <div className="status-message">Loading groups...</div>
+            <div className="status-message">Loading chat groups...</div>
           ) : filteredGroups.length === 0 ? (
-            <div className="status-message">
-              {groups.length === 0 ? 
-                "No groups yet. Create one to start chatting!" : 
-                "No groups match your search."}
+            <div className="no-search-results">
+              {groups.length === 0 
+                ? "You haven't joined any groups yet."
+                : "No groups match your search."}
             </div>
           ) : (
             filteredGroups.map(group => (
@@ -315,38 +305,40 @@ const Chats = () => {
                     <h3 className="group-name">{group.name}</h3>
                     <span className="tooltip-text">{group.name}</span>
                   </div>
-                  <p className="group-message">Tap to open chat</p>
+                  <p className="group-message">
+                    {group.last_message || "No messages yet"}
+                  </p>
                 </div>
                 <div className="group-actions">
-                  <button
+                  <button 
                     className="action-btn info"
                     onClick={(e) => {
                       e.stopPropagation();
-                      openInfoModal(group.id);
                       setSelectedGroup(group);
+                      openInfoModal(group.id);
                     }}
-                    aria-label={`Group info for ${group.name}`}
+                    aria-label="Group info"
                   >
                     <FaInfoCircle />
                   </button>
-                  <button
+                  <button 
                     className="action-btn add"
                     onClick={(e) => {
                       e.stopPropagation();
-                      openAddMembersModal(group.id);
                       setSelectedGroup(group);
+                      openAddMembersModal(group.id);
                     }}
-                    aria-label={`Add members to ${group.name}`}
+                    aria-label="Add members"
                   >
                     <FaUserPlus />
                   </button>
-                  <button
+                  <button 
                     className="action-btn leave"
                     onClick={(e) => {
                       e.stopPropagation();
                       openLeaveGroupModal(group);
                     }}
-                    aria-label={`Leave ${group.name} group`}
+                    aria-label="Leave group"
                   >
                     <FaSignOutAlt />
                   </button>
@@ -678,7 +670,8 @@ const Chats = () => {
   return (
     <Layout>
       <div className="chats-container">
-        {renderSidebar()}
+        {/* Here we need to conditionally render the chat list based on if mobile view */}
+        {(!isMobile || !selectedGroup) && renderChatsList()}
         {renderChatRoom()}
         {renderCreateGroupModal()}
         {renderAddMembersModal()}

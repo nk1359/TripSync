@@ -177,15 +177,17 @@
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  min-height: 600px;
+  grid-auto-rows: minmax(100px, 1fr);
 }
 
 .calendar-day {
   border-right: 1px solid var(--border-color);
   border-bottom: 1px solid var(--border-color);
   padding: 0.5rem;
-  min-height: 100px;
+  height: 100px;
+  max-height: 100px;
   position: relative;
+  overflow: hidden;
 }
 
 .calendar-day:nth-child(7n) {
@@ -223,6 +225,8 @@
   flex-direction: column;
   gap: 0.25rem;
   font-size: 0.8rem;
+  overflow: hidden; 
+  max-height: calc(100% - 28px);
 }
 
 .day-event {
@@ -235,6 +239,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   transition: background-color var(--transition-fast);
+  max-width: 100%;
 }
 
 .day-event:hover {
@@ -619,6 +624,10 @@
 @media (max-width: 768px) {
   .calendar-page {
     padding: 1rem;
+  }
+
+  .calendar-grid {
+    grid-auto-rows: minmax(80px, 1fr);
   }
   
   .calendar-controls {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   FaUser, 
@@ -22,6 +22,13 @@ const Layout = ({ children }) => {
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [user, setUser] = useState(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  // Refs for handling outside clicks
+  const sidebarRef = useRef(null);
+  const menuBtnRef = useRef(null);
+  const profileRef = useRef(null);
+  const notificationRef = useRef(null);
 
   // Friend request notification state
   const [friendRequests, setFriendRequests] = useState([]);
@@ -44,18 +51,58 @@ const Layout = ({ children }) => {
       navigate('/');
     }
     
+    // Improved click outside handler with refs
     const handleClickOutside = (event) => {
-      if (dropdownOpen && !event.target.closest('.profile-icon')) {
+      // Close profile dropdown if clicked outside
+      if (dropdownOpen && 
+          profileRef.current && 
+          !profileRef.current.contains(event.target)) {
         setDropdownOpen(false);
       }
-      if (showNotifications && !event.target.closest('.notification-bell') && !event.target.closest('.notification-dropdown')) {
+      
+      // Close notifications if clicked outside
+      if (showNotifications && 
+          notificationRef.current && 
+          !notificationRef.current.contains(event.target)) {
         setShowNotifications(false);
+      }
+      
+      // Close sidebar on mobile if clicked outside
+      if (isMobile && 
+          isNavOpen && 
+          sidebarRef.current && 
+          !sidebarRef.current.contains(event.target) &&
+          menuBtnRef.current && 
+          !menuBtnRef.current.contains(event.target)) {
+        setIsNavOpen(false);
+        document.body.classList.remove('sidebar-open');
+      }
+    };
+    
+    // Handle resize for responsiveness
+    const handleResize = () => {
+      const mobileView = window.innerWidth <= 768;
+      
+      // Only update if the view type changes to prevent unnecessary re-renders
+      if (mobileView !== isMobile) {
+        setIsMobile(mobileView);
+        
+        // Auto close sidebar when switching to mobile
+        if (mobileView && isNavOpen) {
+          setIsNavOpen(false);
+          document.body.classList.remove('sidebar-open');
+        }
       }
     };
     
     document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, [dropdownOpen, showNotifications, navigate]);
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [dropdownOpen, showNotifications, isNavOpen, isMobile, navigate]);
 
   // Fetch pending friend requests once the user is loaded
   useEffect(() => {
@@ -75,16 +122,39 @@ const Layout = ({ children }) => {
       .catch((err) => console.error(err));
   };
 
-  const toggleNav = () => setIsNavOpen(!isNavOpen);
+  // Improved toggle nav function for mobile
+  const toggleNav = () => {
+    const newNavState = !isNavOpen;
+    setIsNavOpen(newNavState);
+    
+    // Control body scroll when sidebar is open on mobile
+    if (isMobile) {
+      if (newNavState) {
+        document.body.classList.add('sidebar-open');
+      } else {
+        document.body.classList.remove('sidebar-open');
+      }
+    }
+  };
   
   const handleProfileClick = (e) => {
     e.stopPropagation();
     setDropdownOpen(!dropdownOpen);
+    
+    // Close notifications if profile dropdown is opened
+    if (showNotifications) {
+      setShowNotifications(false);
+    }
   };
 
   const handleNotificationClick = (e) => {
     e.stopPropagation();
     setShowNotifications(!showNotifications);
+    
+    // Close profile dropdown if notifications are opened
+    if (dropdownOpen) {
+      setDropdownOpen(false);
+    }
   };
 
   const handleSignOut = () => {
@@ -99,11 +169,11 @@ const Layout = ({ children }) => {
     { icon: <FaCalendarAlt />, text: "Calendar", path: "/calendar" }
   ];
 
-  const isMobile = window.innerWidth <= 768;
   const handleNavigation = (path) => {
     navigate(path);
     if (isMobile) {
       setIsNavOpen(false);
+      document.body.classList.remove('sidebar-open');
     }
   };
 
@@ -231,11 +301,18 @@ const Layout = ({ children }) => {
 
   return (
     <div className={`page-wrapper`}>
-      <div className={`sidebar ${isNavOpen ? 'open' : ''}`}>
+      <div 
+        ref={sidebarRef}
+        className={`sidebar ${isNavOpen ? 'open' : ''}`}
+      >
         <div className="sidebar-header">
           <h1 className="app-logo">Explorer</h1>
           {isMobile && (
-            <button className="close-nav" onClick={toggleNav} aria-label="Close navigation">
+            <button 
+              className="close-nav" 
+              onClick={toggleNav} 
+              aria-label="Close navigation"
+            >
               <FaTimes />
             </button>
           )}
@@ -259,15 +336,24 @@ const Layout = ({ children }) => {
         </nav>
       </div>
       
-      {isNavOpen && isMobile && (
-        <div className="mobile-overlay" onClick={toggleNav}></div>
+      {/* Mobile Overlay with improved visibility state */}
+      {isMobile && (
+        <div 
+          className={`mobile-overlay ${isNavOpen ? 'visible' : ''}`} 
+          onClick={toggleNav}
+        ></div>
       )}
       
       <main className="main-section">
         <div className="top-bar">
           <div className="left-area">
             {isMobile && (
-              <button className="menu-toggle" onClick={toggleNav} aria-label="Toggle menu">
+              <button 
+                ref={menuBtnRef}
+                className="menu-toggle" 
+                onClick={toggleNav} 
+                aria-label="Toggle menu"
+              >
                 <FaBars />
               </button>
             )}
@@ -279,69 +365,72 @@ const Layout = ({ children }) => {
           
           <div className="right-area">
             {/* Notification Bell */}
-            <div className="notification-bell" onClick={handleNotificationClick}>
+            <div 
+              ref={notificationRef}
+              className="notification-bell" 
+              onClick={handleNotificationClick}
+            >
               <FaBell />
               {friendRequests.length > 0 && (
                 <span className="notification-badge">{friendRequests.length}</span>
               )}
               
-              {showNotifications && friendRequests.length > 0 && (
+              {showNotifications && (
                 <div className="notification-dropdown">
                   <div className="dropdown-header">
                     Friend Requests
                   </div>
                   <div className="notification-list">
-                    {friendRequests.map((request) => (
-                      <div key={request.id} className="notification-item">
-                        <div className="notification-content">
-                          <div className="notification-avatar">
-                            {request.first_name.charAt(0)}
+                    {friendRequests.length > 0 ? (
+                      friendRequests.map((request) => (
+                        <div key={request.id} className="notification-item">
+                          <div className="notification-content">
+                            <div className="notification-avatar">
+                              {request.first_name.charAt(0)}
+                            </div>
+                            <div className="notification-details">
+                              <div className="notification-title">
+                                {request.first_name} {request.last_name}
+                              </div>
+                              <div className="notification-subtitle">
+                                @{request.username}
+                              </div>
+                            </div>
                           </div>
-                          <div className="notification-details">
-                            <div className="notification-title">
-                              {request.first_name} {request.last_name}
-                            </div>
-                            <div className="notification-subtitle">
-                              @{request.username}
-                            </div>
+                          <div className="notification-actions">
+                            <button 
+                              className="accept-button" 
+                              onClick={() => acceptFriendRequest(request.id)}
+                              aria-label="Accept friend request"
+                            >
+                              <FaCheckCircle />
+                            </button>
+                            <button 
+                              className="reject-button"
+                              onClick={() => rejectFriendRequest(request.id)}
+                              aria-label="Reject friend request"
+                            >
+                              <FaTimesCircle />
+                            </button>
                           </div>
                         </div>
-                        <div className="notification-actions">
-                          <button 
-                            className="accept-button" 
-                            onClick={() => acceptFriendRequest(request.id)}
-                            aria-label="Accept friend request"
-                          >
-                            <FaCheckCircle />
-                          </button>
-                          <button 
-                            className="reject-button"
-                            onClick={() => rejectFriendRequest(request.id)}
-                            aria-label="Reject friend request"
-                          >
-                            <FaTimesCircle />
-                          </button>
-                        </div>
+                      ))
+                    ) : (
+                      <div className="empty-notifications">
+                        No pending friend requests.
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {showNotifications && friendRequests.length === 0 && (
-                <div className="notification-dropdown">
-                  <div className="dropdown-header">
-                    Notifications
-                  </div>
-                  <div className="empty-notifications">
-                    No pending friend requests.
+                    )}
                   </div>
                 </div>
               )}
             </div>
             
             {/* Profile Menu */}
-            <div className="profile-icon" onClick={handleProfileClick}>
+            <div 
+              ref={profileRef}
+              className="profile-icon" 
+              onClick={handleProfileClick}
+            >
               {user && user.avatar ? (
                 <img src={user.avatar} alt="Profile" className="avatar-img" />
               ) : (
@@ -379,8 +468,14 @@ const Layout = ({ children }) => {
 
       {/* Friend Search Modal */}
       {showFriendSearchModal && (
-        <div className="modal-overlay" onClick={() => setShowFriendSearchModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div 
+          className="modal-overlay" 
+          onClick={() => setShowFriendSearchModal(false)}
+        >
+          <div 
+            className="modal-content" 
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h2>Find Friends</h2>
               <button 

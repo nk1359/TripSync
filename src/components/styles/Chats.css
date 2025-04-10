@@ -7,35 +7,31 @@
   position: relative;
 }
 
-/* Sidebar Styling */
-.sidebar {
-  flex: 0 0 320px;
+/* Added Chats Sidebar */
+.chats-sidebar {
+  width: 320px;
+  height: 100%;
   background-color: var(--card-bg);
+  border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border-color);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  transition: transform 0.3s ease;
-  z-index: 10;
+  overflow: hidden;
 }
 
-/* Sidebar Header */
-.sidebar-header {
-  padding: 16px;
+/* Chats Header */
+.chats-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 16px;
   border-bottom: 1px solid var(--border-color);
-  background-color: var(--card-bg);
-  position: sticky;
-  top: 0;
-  z-index: 2;
 }
 
-.sidebar-title {
+.chats-header h2 {
+  font-size: 1.2rem;
   font-weight: 600;
-  font-size: 1.1rem;
   color: var(--heading-color);
+  margin: 0;
 }
 
 /* Create Group Button */
@@ -708,18 +704,9 @@
 
 /* Responsive Styles */
 @media (max-width: 768px) {
-  .sidebar {
-    position: absolute;
-    top: 0;
-    left: 0;
-    bottom: 0;
+  .chats-sidebar {
     width: 100%;
-    transform: translateX(0);
-    z-index: 20;
-  }
-  
-  .sidebar.hidden {
-    transform: translateX(-100%);
+    height: 100%;
   }
   
   .chat-room {

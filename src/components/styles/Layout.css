@@ -15,7 +15,7 @@
   --secondary-text: #6c757d;
   --border-color: #e9ecef;
   --hover-color: #e9ecef;
-  --sidebar-width: 250px;
+  --sidebar-width: 320px;
   --topbar-height: 70px;
   --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -48,6 +48,7 @@ body {
   width: 100%;
   height: 100vh;
   overflow: hidden;
+  position: relative;
 }
 
 /* ===== Sidebar Styles ===== */
@@ -83,6 +84,17 @@ body {
   color: var(--text-color);
   font-size: 1.2rem;
   cursor: pointer;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--border-radius-full);
+  transition: background-color var(--transition-fast);
+}
+
+.close-nav:hover {
+  background-color: var(--hover-color);
 }
 
 .sidebar-nav {
@@ -130,6 +142,15 @@ body {
   bottom: 0;
   background-color: rgba(0, 0, 0, 0.5);
   z-index: 999;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+  backdrop-filter: blur(2px);
+}
+
+.mobile-overlay.visible {
+  opacity: 1;
+  visibility: visible;
 }
 
 /* ===== Main Content Area ===== */
@@ -157,7 +178,7 @@ body {
   box-shadow: var(--shadow-sm);
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 900;
 }
 
 .left-area, .center-area, .right-area {
@@ -182,6 +203,17 @@ body {
   font-size: 1.2rem;
   color: var(--text-color);
   cursor: pointer;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--border-radius-full);
+  transition: background-color var(--transition-fast);
+}
+
+.menu-toggle:hover {
+  background-color: var(--hover-color);
 }
 
 /* Right Area - Notification Bell & Profile */
@@ -230,7 +262,7 @@ body {
   border-radius: var(--border-radius-md);
   box-shadow: var(--shadow-md);
   overflow: hidden;
-  z-index: 1000;
+  z-index: 1500;
   animation: dropdown-fade var(--transition-fast);
 }
 
@@ -366,7 +398,7 @@ body {
   background-color: var(--card-bg);
   border-radius: var(--border-radius-md);
   box-shadow: var(--shadow-md);
-  z-index: 1000;
+  z-index: 1500;
   overflow: hidden;
   animation: dropdown-fade var(--transition-fast);
 }
@@ -421,6 +453,7 @@ body {
   align-items: center;
   z-index: 2000;
   animation: fade-in var(--transition-fast);
+  backdrop-filter: blur(2px);
 }
 
 @keyframes fade-in {
@@ -631,16 +664,32 @@ body {
   color: white;
 }
 
+/* Prevent body scroll when sidebar is open */
+body.sidebar-open {
+  overflow: hidden;
+}
+
 /* Responsive Styles */
 @media (max-width: 768px) {
   .sidebar {
     position: fixed;
-    left: -100%;
+    left: 0;
     top: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 320px;
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
   }
   
   .sidebar.open {
-    left: 0;
+    transform: translateX(0);
+    box-shadow: var(--shadow-md);
+  }
+  
+  .main-section {
+    width: 100%;
   }
   
   .right-area {
@@ -655,5 +704,47 @@ body {
   .modal-content {
     width: 95%;
     max-width: 450px;
+  }
+  
+  /* Touch-friendly adjustments */
+  .nav-link {
+    padding: 0.85rem 1.5rem;
+  }
+  
+  .dropdown-item {
+    padding: 14px 16px;
+  }
+  
+  .friend-button {
+    padding: 8px 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .modal-overlay {
+    align-items: flex-end;
+  }
+  
+  .modal-content {
+    border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0;
+    max-height: 85vh;
+    width: 100%;
+  }
+  
+  .notification-dropdown {
+    right: -30px;
+    width: 260px;
+  }
+  
+  .dropdown-menu {
+    width: 200px;
+  }
+  
+  .top-bar {
+    padding: 0 1rem;
+  }
+  
+  .notification-bell, .profile-icon {
+    position: static;
   }
 }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { FaTimes, FaCalendarPlus } from 'react-icons/fa';
+import './styles/Calendar.css';
 
 const AddToCalendarModal = ({ place, onClose }) => {
   const [groups, setGroups] = useState([]);
@@ -168,7 +169,8 @@ const AddToCalendarModal = ({ place, onClose }) => {
                 className="add-calendar-button" 
                 disabled={groups.length === 0}
               >
-                <FaCalendarPlus /> Add to Calendar
+                <FaCalendarPlus style={{ marginRight: '0.5rem' }} />
+                Add to Calendar
               </button>
             </div>
           </form>

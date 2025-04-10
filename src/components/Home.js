@@ -1,212 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import Layout from './Layout';
 import './styles/Home.css';
+import AddToCalendarModal from './AddToCalendarModal';
 import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft, FaChevronRight, FaTimes } from 'react-icons/fa';
 
-const AddToCalendarModal = ({ place, onClose }) => {
-  const [groups, setGroups] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [eventForm, setEventForm] = useState({
-    title: place?.place_name || '',
-    description: '',
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: '',
-    location: place?.city_name || '',
-    placeId: place?.place_id || '',
-    groupId: ''
-  });
-
-  const currentUser = JSON.parse(localStorage.getItem('user')) || {};
-  const currentUserId = currentUser.user_id;
-
-  useEffect(() => {
-    fetchGroups();
-    if (place && place.place_id) {
-      fetchPlaceDetails(place.place_id);
-    }
-  }, [place]);
-
-  const fetchPlaceDetails = async (placeId) => {
-    try {
-      const response = await fetch(`http://localhost:5000/api/place/${placeId}`);
-      const data = await response.json();
-      
-      if (data) {
-        const fullAddress = data.address || `${data.name}, ${data.city_name}`;
-        setEventForm(prev => ({
-          ...prev,
-          location: fullAddress
-        }));
-      }
-    } catch (error) {
-      console.error("Error fetching place details:", error);
-    }
-  };
-
-  const fetchGroups = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch(`http://localhost:5000/api/calendar/groups/${currentUserId}`);
-      const data = await response.json();
-      setGroups(data.groups || []);
-      setIsLoading(false);
-    } catch (error) {
-      console.error("Error fetching groups:", error);
-      setIsLoading(false);
-    }
-  };
-
-  const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    setEventForm({
-      ...eventForm,
-      [name]: value
-    });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!eventForm.title.trim() || !eventForm.startDate || !eventForm.groupId) {
-      alert('Please fill in all required fields');
-      return;
-    }
-    
-    try {
-      await fetch('http://localhost:5000/api/calendar/events', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title: eventForm.title,
-          description: eventForm.description,
-          start_date: eventForm.startDate,
-          end_date: eventForm.endDate || null,
-          location: eventForm.location,
-          place_id: eventForm.placeId,
-          group_id: eventForm.groupId,
-          created_by: currentUserId
-        }),
-      });
-      
-      alert('Event added to calendar successfully!');
-      onClose();
-    } catch (error) {
-      console.error("Error creating event:", error);
-      alert(`Failed to add event: Unknown error`);
-    }
-  };
-
-  return (
-    <div className="modal-overlay">
-      <div className="modal-content calendar-modal">
-        <div className="modal-header">
-          <h2>Add to Calendar</h2>
-          <button 
-            className="close-modal" 
-            onClick={onClose}
-          >
-            <FaTimes />
-          </button>
-        </div>
-        
-        {isLoading ? (
-          <div className="modal-loading">
-            <div className="loading-spinner"></div>
-            <p>Loading...</p>
-          </div>
-        ) : (
-          <form className="event-form" onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label htmlFor="title">Event Title *</label>
-              <input
-                id="title"
-                name="title"
-                type="text"
-                value={eventForm.title}
-                onChange={handleFormChange}
-                required
-              />
-            </div>
-            
-            <div className="form-group">
-              <label htmlFor="description">Description</label>
-              <textarea
-                id="description"
-                name="description"
-                placeholder="Add a description..."
-                value={eventForm.description}
-                onChange={handleFormChange}
-              />
-            </div>
-            
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="startDate">Date *</label>
-                <input
-                  id="startDate"
-                  name="startDate"
-                  type="date"
-                  value={eventForm.startDate}
-                  onChange={handleFormChange}
-                  required
-                />
-              </div>
-            </div>
-            
-            <div className="form-group">
-              <label htmlFor="location">Location</label>
-              <input
-                id="location"
-                name="location"
-                type="text"
-                value={eventForm.location}
-                onChange={handleFormChange}
-              />
-            </div>
-            
-            <div className="form-group">
-              <label htmlFor="groupId">Group Calendar *</label>
-              <select
-                id="groupId"
-                name="groupId"
-                value={eventForm.groupId}
-                onChange={handleFormChange}
-                required
-              >
-                <option value="">Select a group</option>
-                {groups.map(group => (
-                  <option key={group.id} value={group.id}>{group.name}</option>
-                ))}
-              </select>
-              {groups.length === 0 && (
-                <p className="no-groups-message">
-                  You don't have any groups yet. Join or create a group to add events to a calendar.
-                </p>
-              )}
-            </div>
-            
-            <div className="modal-footer">
-              <button type="button" className="cancel-button" onClick={onClose}>
-                Cancel
-              </button>
-              <button 
-                type="submit" 
-                className="add-calendar-button" 
-                disabled={groups.length === 0}
-              >
-                <FaCalendarPlus /> Add to Calendar
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
-  );
-};
-
 const Home = () => {
+  const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [topCities, setTopCities] = useState({});
   const [categories, setCategories] = useState([]);
   const [places, setPlaces] = useState([]);
@@ -220,7 +19,6 @@ const Home = () => {
     total: 0,
     totalPages: 0
   });
-  const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState(null);
 
   // Fetch categories on component mount
@@ -309,11 +107,6 @@ const Home = () => {
     window.scrollTo(0, 0);
   };
 
-  const handleAddToCalendar = (place) => {
-    setSelectedPlace(place);
-    setShowCalendarModal(true);
-  };
-
   const handleResetToHomepage = () => {
     setSearchTerm('');
     setActiveCategory('All');
@@ -340,9 +133,14 @@ const Home = () => {
           <FaMapMarkerAlt className="location-icon" />
           <span>{place.city_name}</span>
         </p>
-        <button 
+        
+
+        <button
           className="calendar-button"
-          onClick={() => handleAddToCalendar(place)}
+          onClick={() => {
+            setSelectedPlace(place);
+            setIsCalendarModalOpen(true);
+          }}
         >
           <FaCalendarPlus className="calendar-icon" />
           Add to Calendar
@@ -476,11 +274,11 @@ const Home = () => {
         </div>
       </div>
       
-      {showCalendarModal && (
-        <AddToCalendarModal 
-          place={selectedPlace} 
-          onClose={() => setShowCalendarModal(false)} 
-        />
+      {isCalendarModalOpen && selectedPlace && (
+      <AddToCalendarModal 
+        place={selectedPlace} 
+        onClose={() => setIsCalendarModalOpen(false)} 
+      />
       )}
     </Layout>
   );

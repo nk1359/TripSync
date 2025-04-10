@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { FaTimes, FaCalendarPlus } from 'react-icons/fa';
+import { FaTimes, FaCalendarPlus, FaCheckCircle } from 'react-icons/fa';
 import './styles/Calendar.css';
 
 const AddToCalendarModal = ({ place, onClose }) => {
   const [groups, setGroups] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSuccess, setIsSuccess] = useState(false);
   const [eventForm, setEventForm] = useState({
     title: place?.place_name || '',
     description: '',
@@ -63,13 +64,23 @@ const AddToCalendarModal = ({ place, onClose }) => {
         created_by: currentUserId
       });
       
-      alert('Event added to calendar successfully!');
-      onClose();
+      setIsSuccess(true);
+      setTimeout(() => {
+        onClose();
+      }, 2000);
     } catch (error) {
       console.error("Error creating event:", error.response?.data || error.message);
       alert(`Failed to add event: ${error.response?.data?.error || 'Unknown error'}`);
     }
   };
+
+  const SuccessMessage = () => (
+    <div className="success-message">
+      <FaCheckCircle className="success-icon" />
+      <h3>Event Added Successfully!</h3>
+      <p>Your event has been added to the calendar.</p>
+    </div>
+  );
 
   return (
     <div className="modal-overlay">
@@ -89,6 +100,8 @@ const AddToCalendarModal = ({ place, onClose }) => {
             <div className="loading-spinner"></div>
             <p>Loading...</p>
           </div>
+        ) : isSuccess ? (
+          <SuccessMessage />
         ) : (
           <form className="event-form" onSubmit={handleSubmit}>
             <div className="form-group">

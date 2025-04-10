@@ -701,6 +701,33 @@
   }
 }
 
+/* Success Message Styles */
+.success-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+
+.success-icon {
+  font-size: 3rem;
+  color: #4CAF50; /* Green color for success */
+  margin-bottom: 1rem;
+}
+
+.success-message h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.5rem;
+  color: var(--heading-color);
+}
+
+.success-message p {
+  color: var(--secondary-text);
+  margin: 0;
+}
+
 /* Placeholder color variables */
 :root {
   --primary-color: #4361ee;

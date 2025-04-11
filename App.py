@@ -13,9 +13,7 @@ db_config = {
     'database': 'tripsync'
 }
 
-@app.route('/')
-def index():
-    return send_from_directory(app.static_folder, 'index.html')
+# API Endpoints (these all stay the same)
 
 @app.route('/api/hello', methods=['GET'])
 def hello():
@@ -55,12 +53,6 @@ def register_user():
     finally:
         if conn:
             conn.close()
-
-@app.route('/<path:path>')
-def serve_react_app(path):
-    if not os.path.exists(os.path.join(app.static_folder, path)):
-        return send_from_directory(app.static_folder, 'index.html')
-    return send_from_directory(app.static_folder, path)
 
 @app.route('/api/login', methods=['POST'])
 def login_user():
@@ -1284,8 +1276,6 @@ def leave_group():
                       (group_id, username))
         conn.commit()
         
-        # Add a message using the user's username as sender (instead of 'System')
-        # This way we avoid the foreign key constraint issue
         cursor.execute(
             "INSERT INTO messages (group_id, sender, message) VALUES (%s, %s, %s)",
             (group_id, username, f"{full_name} has left the group")
@@ -1299,6 +1289,25 @@ def leave_group():
     finally:
         if conn:
             conn.close()
+
+@app.route('/chats')
+@app.route('/chats/<path:path>')
+@app.route('/calendar')
+def react_routes(path=None):
+    return send_from_directory(app.static_folder, 'index.html')
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_react_app(path):
+    if path.startswith('api/'):
+        return {'error': 'API endpoint not found'}, 404
+    
+    if '.' in path:
+        file_path = os.path.join(app.static_folder, path)
+        if os.path.isfile(file_path):
+            return send_from_directory(app.static_folder, path)
+    
+    return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
     app.run(debug=True)

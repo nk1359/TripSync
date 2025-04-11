@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
+import { AuthContext } from './AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { 
   FaUser, 
@@ -19,9 +20,9 @@ import './styles/Layout.css';
 
 const Layout = ({ children }) => {
   const navigate = useNavigate();
+  const { user, logout } = useContext(AuthContext); 
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [user, setUser] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
   // Refs for handling outside clicks
@@ -40,69 +41,6 @@ const Layout = ({ children }) => {
   const [friendSearchResults, setFriendSearchResults] = useState([]);
   const [friendSearchMessage, setFriendSearchMessage] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-
-  useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      const parsedUser = JSON.parse(storedUser);
-      setUser(parsedUser);
-    } else {
-      // Redirect to login if no user is found
-      navigate('/');
-    }
-    
-    // Improved click outside handler with refs
-    const handleClickOutside = (event) => {
-      // Close profile dropdown if clicked outside
-      if (dropdownOpen && 
-          profileRef.current && 
-          !profileRef.current.contains(event.target)) {
-        setDropdownOpen(false);
-      }
-      
-      // Close notifications if clicked outside
-      if (showNotifications && 
-          notificationRef.current && 
-          !notificationRef.current.contains(event.target)) {
-        setShowNotifications(false);
-      }
-      
-      // Close sidebar on mobile if clicked outside
-      if (isMobile && 
-          isNavOpen && 
-          sidebarRef.current && 
-          !sidebarRef.current.contains(event.target) &&
-          menuBtnRef.current && 
-          !menuBtnRef.current.contains(event.target)) {
-        setIsNavOpen(false);
-        document.body.classList.remove('sidebar-open');
-      }
-    };
-    
-    // Handle resize for responsiveness
-    const handleResize = () => {
-      const mobileView = window.innerWidth <= 768;
-      
-      // Only update if the view type changes to prevent unnecessary re-renders
-      if (mobileView !== isMobile) {
-        setIsMobile(mobileView);
-        
-        // Auto close sidebar when switching to mobile
-        if (mobileView && isNavOpen) {
-          setIsNavOpen(false);
-          document.body.classList.remove('sidebar-open');
-        }
-      }
-    };
-    
-    document.addEventListener('click', handleClickOutside);
-    window.addEventListener('resize', handleResize);
-    
-    return () => {
-      document.removeEventListener('click', handleClickOutside);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, [dropdownOpen, showNotifications, isNavOpen, isMobile, navigate]);
 
   // Fetch pending friend requests once the user is loaded
   useEffect(() => {
@@ -158,7 +96,7 @@ const Layout = ({ children }) => {
   };
 
   const handleSignOut = () => {
-    localStorage.removeItem('user');
+    logout();
     navigate('/');
   };
 

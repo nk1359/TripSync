@@ -2,6 +2,11 @@ from flask import Flask, send_from_directory, jsonify, request
 from flask_cors import CORS
 import mysql.connector
 import os
+import requests
+
+from dotenv import load_dotenv
+load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 app = Flask(__name__, static_folder='build', static_url_path='')
 CORS(app)
@@ -10,7 +15,8 @@ db_config = {
     'host': 'localhost',
     'user': 'root',
     'password': 'admin',
-    'database': 'tripsync'
+    'database': 'tripsync',
+    'auth_plugin': 'mysql_native_password'
 }
 
 # API Endpoints (these all stay the same)
@@ -629,156 +635,242 @@ def get_top_places():
         if conn:
             conn.close()
 
-@app.route('/api/top-cities', methods=['GET'])
-def get_top_cities():
-    try:
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
+# @app.route('/api/top-cities', methods=['GET'])
+# def get_top_cities():
+#     try:
+#         conn = mysql.connector.connect(**db_config)
+#         cursor = conn.cursor(dictionary=True)
 
-        # Fetch top 5 cities (adjust as needed)
-        cities_query = """
-        SELECT c.id, c.city_name
-        FROM cities c 
-        ORDER BY c.id
-        LIMIT 5
-        """
-        cursor.execute(cities_query)
-        cities = cursor.fetchall()
+#         # Fetch top 5 cities (adjust as needed)
+#         cities_query = """
+#         SELECT c.id, c.city_name
+#         FROM cities c 
+#         ORDER BY c.id
+#         LIMIT 5
+#         """
+#         cursor.execute(cities_query)
+#         cities = cursor.fetchall()
         
-        result = {}
+#         result = {}
         
-        # For each city, get its top 5 places, INCLUDING the city_name
-        for city in cities:
-            city_id = city['id']
-            city_name = city['city_name']
+#         # For each city, get its top 5 places, INCLUDING the city_name
+#         for city in cities:
+#             city_id = city['id']
+#             city_name = city['city_name']
             
-            places_query = """
-            SELECT 
-                p.id AS place_id,
-                p.name AS place_name,
-                p.category,
-                p.image_url,
-                c.city_name,         -- JOIN the cities table so we can SELECT c.city_name
-                '4.5' AS rating
-            FROM places p
-            JOIN cities c ON p.city_id = c.id
-            WHERE p.city_id = %s
-            LIMIT 5
-            """
+#             places_query = """
+#             SELECT 
+#                 p.id AS place_id,
+#                 p.name AS place_name,
+#                 p.category,
+#                 p.image_url,
+#                 c.city_name,         -- JOIN the cities table so we can SELECT c.city_name
+#                 '4.5' AS rating
+#             FROM places p
+#             JOIN cities c ON p.city_id = c.id
+#             WHERE p.city_id = %s
+#             LIMIT 5
+#             """
             
-            cursor.execute(places_query, (city_id,))
-            places = cursor.fetchall()
+#             cursor.execute(places_query, (city_id,))
+#             places = cursor.fetchall()
             
-            result[city_name] = places
+#             result[city_name] = places
             
-        return jsonify(result), 200
+#         return jsonify(result), 200
 
-    except mysql.connector.Error as err:
-        print("MySQL Error:", err)
-        return jsonify({'error': str(err)}), 500
-    finally:
-        if conn:
-            conn.close()
+#     except mysql.connector.Error as err:
+#         print("MySQL Error:", err)
+#         return jsonify({'error': str(err)}), 500
+#     finally:
+#         if conn:
+#             conn.close()
 
 
-@app.route('/api/categories', methods=['GET'])
+# @app.route('/api/categories', methods=['GET'])
+# def get_categories():
+#     try:
+#         conn = mysql.connector.connect(**db_config)
+#         cursor = conn.cursor(dictionary=True)
+        
+#         query = """
+#         SELECT DISTINCT category 
+#         FROM places 
+#         WHERE category IS NOT NULL AND category != ''
+#         ORDER BY category
+#         """
+        
+#         cursor.execute(query)
+#         categories = cursor.fetchall()
+        
+#         category_list = [item['category'] for item in categories]
+        
+#         return jsonify(category_list), 200
+        
+#     except mysql.connector.Error as err:
+#         print("MySQL Error:", err)
+#         return jsonify({'error': str(err)}), 500
+#     finally:
+#         if conn:
+#             conn.close()
+
+@app.route('/api/categories')
 def get_categories():
-    try:
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
-        
-        query = """
-        SELECT DISTINCT category 
-        FROM places 
-        WHERE category IS NOT NULL AND category != ''
-        ORDER BY category
-        """
-        
-        cursor.execute(query)
-        categories = cursor.fetchall()
-        
-        category_list = [item['category'] for item in categories]
-        
-        return jsonify(category_list), 200
-        
-    except mysql.connector.Error as err:
-        print("MySQL Error:", err)
-        return jsonify({'error': str(err)}), 500
-    finally:
-        if conn:
-            conn.close()
+    categories = [
+        "All",
+        "restaurant",
+        "cafe",
+        "museum",
+        "park",
+        "shopping_mall",
+        "tourist_attraction"
+    ]
+    return jsonify(categories)
 
-@app.route('/api/places', methods=['GET'])
+@app.route('/api/top-cities')
+def get_top_cities():
+    cities = {
+        "New York": {"lat": 40.7128, "lng": -74.0060},
+        "Los Angeles": {"lat": 34.0522, "lng": -118.2437},
+        "Chicago": {"lat": 41.8781, "lng": -87.6298}
+    }
+
+    result = {}
+    for city, coords in cities.items():
+        url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+        params = {
+            "key": GOOGLE_API_KEY,
+            "location": f"{coords['lat']},{coords['lng']}",
+            "radius": 3000,
+            "type": "tourist_attraction"
+        }
+        r = requests.get(url, params=params).json()
+        result[city] = [
+            {
+                "place_id": p.get("place_id"),
+                "place_name": p.get("name"),
+                "city_name": city,
+                "rating": p.get("rating"),
+                "image_url": (
+                    f"https://maps.googleapis.com/maps/api/place/photo"
+                    f"?maxwidth=400&photoreference={p['photos'][0]['photo_reference']}&key={GOOGLE_API_KEY}"
+                ) if "photos" in p else None
+            }
+            for p in r.get("results", [])
+        ]
+    return jsonify(result)
+
+
+# @app.route('/api/places', methods=['GET'])
+# def get_places():
+#     try:
+#         category = request.args.get('category', '')
+#         search_term = request.args.get('search', '')
+#         page = int(request.args.get('page', 1))
+#         per_page = int(request.args.get('per_page', 10))
+        
+#         offset = (page - 1) * per_page
+        
+#         conn = mysql.connector.connect(**db_config)
+#         cursor = conn.cursor(dictionary=True)
+        
+#         params = []
+#         where_clauses = []
+        
+#         if category and category != 'All':
+#             where_clauses.append("p.category = %s")
+#             params.append(category)
+        
+#         if search_term:
+#             where_clauses.append("(p.name LIKE %s OR c.city_name LIKE %s)")
+#             search_pattern = f"%{search_term}%"
+#             params.extend([search_pattern, search_pattern])
+        
+#         where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
+        
+#         # Modified query to use p.image_url from the places table
+#         query = f"""
+#         SELECT 
+#             p.id AS place_id,
+#             p.name AS place_name,
+#             p.category,
+#             c.city_name,
+#             p.image_url,
+#             '4.5' AS rating
+#         FROM places p
+#         JOIN cities c ON p.city_id = c.id
+#         WHERE {where_clause}
+#         ORDER BY p.name
+#         LIMIT %s OFFSET %s
+#         """
+        
+#         params.extend([per_page, offset])
+#         cursor.execute(query, params)
+#         places = cursor.fetchall()
+        
+#         count_query = f"""
+#         SELECT COUNT(*) as total
+#         FROM places p
+#         JOIN cities c ON p.city_id = c.id
+#         WHERE {where_clause}
+#         """
+        
+#         cursor.execute(count_query, params[:-2] if params else [])
+#         total = cursor.fetchone()['total']
+        
+#         return jsonify({
+#             'places': places,
+#             'total': total,
+#             'page': page,
+#             'per_page': per_page,
+#             'total_pages': (total + per_page - 1) // per_page
+#         }), 200
+        
+#     except mysql.connector.Error as err:
+#         print("MySQL Error:", err)
+#         return jsonify({'error': str(err)}), 500
+#     finally:
+#         if conn:
+#             conn.close()
+
+@app.route('/api/places')
 def get_places():
-    try:
-        category = request.args.get('category', '')
-        search_term = request.args.get('search', '')
-        page = int(request.args.get('page', 1))
-        per_page = int(request.args.get('per_page', 10))
-        
-        offset = (page - 1) * per_page
-        
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
-        
-        params = []
-        where_clauses = []
-        
-        if category and category != 'All':
-            where_clauses.append("p.category = %s")
-            params.append(category)
-        
-        if search_term:
-            where_clauses.append("(p.name LIKE %s OR c.city_name LIKE %s)")
-            search_pattern = f"%{search_term}%"
-            params.extend([search_pattern, search_pattern])
-        
-        where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
-        
-        # Modified query to use p.image_url from the places table
-        query = f"""
-        SELECT 
-            p.id AS place_id,
-            p.name AS place_name,
-            p.category,
-            c.city_name,
-            p.image_url,
-            '4.5' AS rating
-        FROM places p
-        JOIN cities c ON p.city_id = c.id
-        WHERE {where_clause}
-        ORDER BY p.name
-        LIMIT %s OFFSET %s
-        """
-        
-        params.extend([per_page, offset])
-        cursor.execute(query, params)
-        places = cursor.fetchall()
-        
-        count_query = f"""
-        SELECT COUNT(*) as total
-        FROM places p
-        JOIN cities c ON p.city_id = c.id
-        WHERE {where_clause}
-        """
-        
-        cursor.execute(count_query, params[:-2] if params else [])
-        total = cursor.fetchone()['total']
-        
-        return jsonify({
-            'places': places,
-            'total': total,
-            'page': page,
-            'per_page': per_page,
-            'total_pages': (total + per_page - 1) // per_page
-        }), 200
-        
-    except mysql.connector.Error as err:
-        print("MySQL Error:", err)
-        return jsonify({'error': str(err)}), 500
-    finally:
-        if conn:
-            conn.close()
+    category = request.args.get("category")
+    search = request.args.get("search")
+    lat = request.args.get("lat", "40.7128")   # default NYC
+    lng = request.args.get("lng", "-74.0060")
+
+    url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+    params = {
+        "key": GOOGLE_API_KEY,
+        "location": f"{lat},{lng}",
+        "radius": 5000,
+    }
+    if category and category != "All":
+        params["type"] = category
+    if search:
+        params["keyword"] = search
+
+    r = requests.get(url, params=params).json()
+    results = [
+        {
+            "place_id": p.get("place_id"),
+            "place_name": p.get("name"),
+            "city_name": p.get("vicinity"),
+            "rating": p.get("rating"),
+            "image_url": (
+                f"https://maps.googleapis.com/maps/api/place/photo"
+                f"?maxwidth=400&photoreference={p['photos'][0]['photo_reference']}&key={GOOGLE_API_KEY}"
+            ) if "photos" in p else None
+        }
+        for p in r.get("results", [])
+    ]
+
+    return jsonify({
+        "places": results,
+        "total": len(results),
+        "total_pages": 1  # could add real pagination if you use next_page_token
+    })
 
 # New endpoint to get place details including address
 @app.route('/api/place/<int:place_id>', methods=['GET'])
@@ -1316,5 +1408,46 @@ def serve_react_app(path):
     
     return send_from_directory(app.static_folder, 'index.html')
 
+def get_places():
+    # Get query parameters from frontend
+    lat = request.args.get('lat')
+    lng = request.args.get('lng')
+    query = request.args.get('query')  # optional search text
+    radius = request.args.get('radius', 2000)  # default 2km
+
+    if not lat or not lng:
+        return jsonify({"error": "Latitude and longitude required"}), 400
+
+    url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+    params = {
+        "key": GOOGLE_API_KEY,
+        "location": f"{lat},{lng}",
+        "radius": radius,
+    }
+    if query:
+        params["keyword"] = query
+
+    response = requests.get(url, params=params)
+    data = response.json()
+
+    if "results" not in data:
+        return jsonify({"error": "No results found"}), 404
+
+    # Simplify results for your frontend
+    places = [
+        {
+            "name": place.get("name"),
+            "address": place.get("vicinity"),
+            "rating": place.get("rating"),
+            "lat": place["geometry"]["location"]["lat"],
+            "lng": place["geometry"]["location"]["lng"],
+            "place_id": place.get("place_id"),
+        }
+        for place in data["results"]
+    ]
+
+    return jsonify({"places": places})
+
 if __name__ == '__main__':
     app.run(debug=True)
+

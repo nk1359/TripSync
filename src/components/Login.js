@@ -83,7 +83,7 @@ function Login() {
           </button>
         </form>
         
-        <a href="/register" className="link">Create Account</a>
+        <Link to="/register" className="link">Create Account</Link>
       </div>
     </div>
   );

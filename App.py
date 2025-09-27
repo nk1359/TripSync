@@ -330,12 +330,19 @@ def get_groups():
             return jsonify({"error": "User not found"}), 404
         username = user['username']
         
-        # Get groups where the user is a member
+        # Get groups where the user is a member, along with the last message
         query = """
-        SELECT g.id, g.name 
+        SELECT g.id, g.name, 
+               (SELECT message FROM messages 
+                WHERE group_id = g.id 
+                ORDER BY created_at DESC LIMIT 1) as last_message,
+               (SELECT created_at FROM messages 
+                WHERE group_id = g.id 
+                ORDER BY created_at DESC LIMIT 1) as last_message_time
         FROM chat_groups g
         JOIN group_members gm ON g.id = gm.group_id
         WHERE gm.username = %s
+        ORDER BY last_message_time IS NULL, last_message_time DESC
         """
         cursor.execute(query, (username,))
         groups = cursor.fetchall()

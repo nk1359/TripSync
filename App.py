@@ -987,38 +987,6 @@ def get_categories():
     ]
     return jsonify(categories)
 
-@app.route('/api/top-cities')
-def get_top_cities():
-    cities = {
-        "New York": {"lat": 40.7128, "lng": -74.0060},
-        "Los Angeles": {"lat": 34.0522, "lng": -118.2437},
-        "Chicago": {"lat": 41.8781, "lng": -87.6298}
-    }
-
-    result = {}
-    for city, coords in cities.items():
-        url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-        params = {
-            "key": GOOGLE_API_KEY,
-            "location": f"{coords['lat']},{coords['lng']}",
-            "radius": 3000,
-            "type": "tourist_attraction"
-        }
-        r = requests.get(url, params=params).json()
-        result[city] = [
-            {
-                "place_id": p.get("place_id"),
-                "place_name": p.get("name"),
-                "city_name": city,
-                "rating": p.get("rating"),
-                "image_url": (
-                    f"https://maps.googleapis.com/maps/api/place/photo"
-                    f"?maxwidth=400&photoreference={p['photos'][0]['photo_reference']}&key={GOOGLE_API_KEY}"
-                ) if "photos" in p else None
-            }
-            for p in r.get("results", [])
-        ]
-    return jsonify(result)
 
 
 # @app.route('/api/places', methods=['GET'])

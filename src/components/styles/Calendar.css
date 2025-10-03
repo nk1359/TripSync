@@ -730,16 +730,51 @@
 
 /* Placeholder color variables */
 :root {
-  --primary-color: #4361ee;
-  --primary-dark: #3a56d4;
-  --primary-light: rgba(67, 97, 238, 0.15);
-  --bg-color: #f8f9fa;
-  --card-bg: #ffffff;
-  --heading-color: #343a40;
-  --text-color: #495057;
-  --secondary-text: #6c757d;
-  --border-color: #e9ecef;
-  --hover-color: #f1f3f5;
+  /* Dark Theme Colors */
+  --primary-color: #6366f1;
+  --primary-dark: #4f46e5;
+  --primary-light: #818cf8;
+  --accent-color: #06b6d4;
+  --accent-pink: #ec4899;
+  --success-color: #10b981;
+  --danger-color: #ef4444;
+  --warning-color: #f59e0b;
+  
+  /* Dark Backgrounds */
+  --bg-color: #0f0f23;
+  --bg-secondary: #1a1a2e;
+  --bg-tertiary: #16213e;
+  --card-bg: #1e1e3f;
+  --bg-hover: #2a2a4a;
+  --bg-glass: rgba(30, 30, 63, 0.8);
+  
+  /* Text Colors */
+  --heading-color: #f8fafc;
+  --text-color: #cbd5e1;
+  --secondary-text: #94a3b8;
+  --text-accent: #60a5fa;
+  
+  /* Borders & Effects */
+  --border-color: #374151;
+  --border-light: #4b5563;
+  --hover-color: #2a2a4a;
+  
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  --gradient-secondary: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+  --gradient-accent: linear-gradient(135deg, #ec4899 0%, #f59e0b 100%);
+  
+  /* Shadows */
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.6);
+  --shadow-xl: 0 25px 50px rgba(0, 0, 0, 0.8);
+  
+  /* Effects */
+  --blur: blur(20px);
+  --border-radius: 12px;
+  --border-radius-lg: 20px;
+  --border-radius-xl: 24px;
+  --transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   --danger-color: #ef4444;
   --border-radius-sm: 4px;
   --border-radius-md: 8px;
@@ -751,4 +786,17 @@
   --transition-fast: 0.15s ease;
   --transition-medium: 0.3s ease;
   --topbar-height: 60px;
+}
+
+/* Readonly Field Styles */
+.readonly-field {
+  background-color: #f5f5f5 !important;
+  color: #666 !important;
+  cursor: not-allowed !important;
+  border-color: #ddd !important;
+}
+
+.readonly-field:focus {
+  outline: none !important;
+  box-shadow: none !important;
 }

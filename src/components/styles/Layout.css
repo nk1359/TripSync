@@ -1,23 +1,44 @@
 /* ===== Layout Styles ===== */
 /* Base Styles and CSS Variables */
 :root {
-  --primary-color: #4361ee;
-  --primary-dark: #3a56d4;
-  --primary-light: #eef2ff;
-  --accent-color: #ff7b54;
+  /* Dark Theme Colors */
+  --primary-color: #6366f1;
+  --primary-dark: #4f46e5;
+  --primary-light: #818cf8;
+  --accent-color: #06b6d4;
+  --accent-pink: #ec4899;
   --success-color: #10b981;
   --danger-color: #ef4444;
   --warning-color: #f59e0b;
-  --bg-color: #f8f9fa;
-  --card-bg: #ffffff;
-  --heading-color: #343a40;
-  --text-color: #495057;
-  --secondary-text: #6c757d;
-  --border-color: #e9ecef;
-  --hover-color: #e9ecef;
+  
+  /* Dark Backgrounds */
+  --bg-color: #0f0f23;
+  --bg-secondary: #1a1a2e;
+  --bg-tertiary: #16213e;
+  --card-bg: #1e1e3f;
+  --bg-hover: #2a2a4a;
+  --bg-glass: rgba(30, 30, 63, 0.8);
+  
+  /* Text Colors */
+  --heading-color: #f8fafc;
+  --text-color: #cbd5e1;
+  --secondary-text: #94a3b8;
+  --text-accent: #60a5fa;
+  
+  /* Borders & Effects */
+  --border-color: #374151;
+  --border-light: #4b5563;
+  --hover-color: #2a2a4a;
+  
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  --gradient-secondary: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+  --gradient-accent: linear-gradient(135deg, #ec4899 0%, #f59e0b 100%);
+  
+  /* Layout */
   --sidebar-width: 320px;
   --topbar-height: 70px;
-  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
   --transition-fast: 0.2s ease;
   --transition-medium: 0.3s ease;
@@ -45,8 +66,9 @@ body {
 /* Page Layout */
 .page-wrapper {
   display: flex;
+  flex-direction: column;
   width: 100%;
-  height: 100vh;
+  min-height: 100vh;
   overflow: hidden;
   position: relative;
 }
@@ -156,7 +178,8 @@ body {
 /* ===== Main Content Area ===== */
 .main-section {
   flex: 1;
-  height: 100vh;
+  width: 100%;
+  min-height: 100vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -173,17 +196,97 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 1.5rem;
+  padding: 0 2rem;
   background-color: var(--card-bg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow);
   position: sticky;
   top: 0;
   z-index: 900;
+  backdrop-filter: var(--blur);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .left-area, .center-area, .right-area {
   display: flex;
   align-items: center;
+}
+
+/* ===== Top Navigation ===== */
+.app-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--heading-color);
+  font-weight: 700;
+  font-size: 1.5rem;
+}
+
+.logo-icon {
+  font-size: 2rem;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.logo-text {
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.top-nav {
+  display: flex;
+  align-items: center;
+}
+
+.top-nav .nav-list {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.top-nav .nav-item {
+  margin: 0;
+}
+
+.top-nav .nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--border-radius);
+  transition: var(--transition);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-weight: 500;
+  position: relative;
+}
+
+.top-nav .nav-link:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  transform: translateY(-2px);
+}
+
+.top-nav .nav-link .nav-icon {
+  font-size: 1rem;
+  color: var(--primary-color);
+  transition: var(--transition);
+}
+
+.top-nav .nav-link:hover .nav-icon {
+  color: var(--accent-color);
+  transform: scale(1.1);
+}
+
+.top-nav .nav-text {
+  font-size: 0.9rem;
+  white-space: nowrap;
 }
 
 .center-area {
@@ -746,5 +849,38 @@ body.sidebar-open {
   
   .notification-bell, .profile-icon {
     position: static;
+  }
+  
+  /* Hide navigation text on small screens */
+  .top-nav .nav-text {
+    display: none;
+  }
+  
+  .top-nav .nav-link {
+    padding: 0.75rem;
+  }
+  
+  .top-nav .nav-list {
+    gap: 0.25rem;
+  }
+  
+  /* Hide app logo text on very small screens */
+  .app-logo .logo-text {
+    display: none;
+  }
+}
+
+/* Additional mobile styles for top navigation */
+@media (max-width: 768px) {
+  .top-nav .nav-text {
+    display: none;
+  }
+  
+  .top-nav .nav-link {
+    padding: 0.75rem;
+  }
+  
+  .top-nav .nav-list {
+    gap: 0.25rem;
   }
 }

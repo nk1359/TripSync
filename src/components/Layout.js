@@ -239,66 +239,32 @@ const Layout = ({ children }) => {
 
   return (
     <div className={`page-wrapper`}>
-      <div 
-        ref={sidebarRef}
-        className={`sidebar ${isNavOpen ? 'open' : ''}`}
-      >
-        <div className="sidebar-header">
-          <h1 className="app-logo">Explorer</h1>
-          {isMobile && (
-            <button 
-              className="close-nav" 
-              onClick={toggleNav} 
-              aria-label="Close navigation"
-            >
-              <FaTimes />
-            </button>
-          )}
-        </div>
-        
-        <nav className="sidebar-nav">
-          <ul className="nav-list">
-            {navItems.map((item, index) => (
-              <li key={index} className="nav-item">
-                <div 
-                  onClick={() => handleNavigation(item.path)} 
-                  className="nav-link"
-                  style={{ cursor: 'pointer' }}
-                >
-                  <span className="nav-icon">{item.icon}</span>
-                  <span className="nav-text">{item.text}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      </div>
-      
-      {/* Mobile Overlay with improved visibility state */}
-      {isMobile && (
-        <div 
-          className={`mobile-overlay ${isNavOpen ? 'visible' : ''}`} 
-          onClick={toggleNav}
-        ></div>
-      )}
-      
       <main className="main-section">
         <div className="top-bar">
           <div className="left-area">
-            {isMobile && (
-              <button 
-                ref={menuBtnRef}
-                className="menu-toggle" 
-                onClick={toggleNav} 
-                aria-label="Toggle menu"
-              >
-                <FaBars />
-              </button>
-            )}
+            <div className="app-logo">
+              <span className="logo-icon">🌍</span>
+              <span className="logo-text">TripSync</span>
+            </div>
           </div>
           
           <div className="center-area">
-            {isMobile && <h1 className="app-title">Explorer</h1>}
+            <nav className="top-nav">
+              <ul className="nav-list">
+                {navItems.map((item, index) => (
+                  <li key={index} className="nav-item">
+                    <div 
+                      onClick={() => handleNavigation(item.path)} 
+                      className="nav-link"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <span className="nav-icon">{item.icon}</span>
+                      <span className="nav-text">{item.text}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </nav>
           </div>
           
           <div className="right-area">

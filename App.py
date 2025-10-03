@@ -20,11 +20,7 @@ db_config = {
     'host': os.getenv('DB_HOST', 'localhost'),
     'user': os.getenv('DB_USER', 'root'),
     'password': os.getenv('DB_PASSWORD', 'admin'),
-    'database': os.getenv('DB_NAME', 'tripsync')
-    'host': 'localhost',
-    'user': 'root',
-    'password': 'admin',
-    'database': 'tripsync',
+    'database': os.getenv('DB_NAME', 'tripsync'),
     'auth_plugin': 'mysql_native_password'
 }
 

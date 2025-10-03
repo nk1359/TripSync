@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Layout from './Layout';
 import './styles/Home.css';
 import AddToCalendarModal from './AddToCalendarModal';
@@ -7,6 +7,19 @@ import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft
 const Home = () => {
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [welcomeData, setWelcomeData] = useState(null);
+  
+  // Ref for smooth scrolling to search section
+  const searchSectionRef = useRef(null);
+  
+  // Smooth scroll function
+  const scrollToSearch = () => {
+    if (searchSectionRef.current) {
+      searchSectionRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    }
+  };
   const [nearbySpots, setNearbySpots] = useState([]);
   const [localEvents, setLocalEvents] = useState([]);
   const [featuredCards, setFeaturedCards] = useState([]);
@@ -432,33 +445,52 @@ const Home = () => {
     <div key={place.place_id} className="place-card">
       <div className="place-image-container">
         <img
-          src={place.image_url || 'https://via.placeholder.com/300x200?text=No+Image'}
+          src={place.image_url || 'https://via.placeholder.com/400x250/1a1a2e/ffffff?text=No+Image'}
           alt={place.place_name}
           className="place-image"
+          onError={(e) => {
+            e.target.src = 'https://via.placeholder.com/400x250/1a1a2e/6366f1?text=No+Image+Available';
+          }}
         />
-        <div className="rating">
-          <FaStar className="star-icon" />
+        <div className="place-image-overlay"></div>
+        <div className="place-rating-overlay">
+          <FaStar className="rating-stars" />
           <span>{place.rating || '4.5'}</span>
         </div>
       </div>
-      <div className="place-details">
+      
+      <div className="place-content">
         <h3 className="place-name">{place.place_name}</h3>
-        <p className="place-category">
+        
+        <div className="place-location">
           <FaMapMarkerAlt className="location-icon" />
           <span>{place.city_name}</span>
-        </p>
+        </div>
         
+        <div className="place-category">
+          {place.category}
+        </div>
 
+        <div className="place-actions">
         <button
-          className="calendar-button"
+            className="add-to-calendar-btn"
           onClick={() => {
             setSelectedPlace(place);
             setIsCalendarModalOpen(true);
           }}
         >
-          <FaCalendarPlus className="calendar-icon" />
+            <FaCalendarPlus />
           Add to Calendar
         </button>
+          
+          <button 
+            className="view-details-btn"
+            onClick={() => window.open(place.google_maps_url, '_blank')}
+          >
+            <FaMapMarkerAlt />
+            View on Maps
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -647,130 +679,190 @@ const Home = () => {
   );
 
   const renderSearchForm = () => (
-    <div className="search-form-container">
-      <div className="search-form">
-        <h3>Find Places</h3>
-        
-        {/* Place Type Search */}
-        <div className="form-group">
-          <label htmlFor="placeType">What are you looking for?</label>
-          <div className="autocomplete-container">
-            <input
-              id="placeType"
-              type="text"
-              placeholder="e.g., McDonald's, Starbucks, Central Park..."
-              value={searchForm.placeType}
-              onChange={(e) => handleInputChange('placeType', e.target.value)}
-              onFocus={() => searchForm.placeType.length >= 2 && setShowAutocomplete(true)}
-              onBlur={() => setTimeout(() => setShowAutocomplete(false), 200)}
-              className="form-input"
-            />
-            {showAutocomplete && autocompleteResults.length > 0 && (
-              <div className="autocomplete-dropdown">
-                <div className="autocomplete-header">
-                  Click to search this place directly
-                </div>
-                {autocompleteResults.map((place) => (
-                  <div
-                    key={place.place_id}
-                    className="autocomplete-item"
-                    onClick={() => handlePlaceSelect(place)}
-                  >
-                    <div className="autocomplete-main">{place.main_text}</div>
-                    <div className="autocomplete-secondary">{place.secondary_text}</div>
+    <div className="search-page">
+      <div className="search-hero">
+        <div className="search-hero-content">
+          <h1 className="search-title">
+            <span className="search-title-icon">🔍</span>
+            Discover Amazing Places
+          </h1>
+          <p className="search-subtitle">
+            Find restaurants, attractions, hotels, and more across the USA
+          </p>
+        </div>
+      </div>
+
+      <div className="search-form-container">
+        <div className="search-form-card">
+          {/* Place Type Search */}
+          <div className="form-section">
+            <div className="form-section-header">
+              <div className="form-section-icon">📍</div>
+              <h3>What are you looking for?</h3>
+            </div>
+            <div className="autocomplete-container">
+              <div className="input-wrapper">
+                <FaSearch className="input-icon" />
+                <input
+                  id="placeType"
+                  type="text"
+                  placeholder="Search for places... (e.g., McDonald's, Central Park, hotels)"
+                  value={searchForm.placeType}
+                  onChange={(e) => handleInputChange('placeType', e.target.value)}
+                  onFocus={() => searchForm.placeType.length >= 2 && setShowAutocomplete(true)}
+                  onBlur={() => setTimeout(() => setShowAutocomplete(false), 200)}
+                  className="modern-input"
+                />
+              </div>
+              {showAutocomplete && autocompleteResults.length > 0 && (
+                <div className="autocomplete-dropdown modern-dropdown">
+                  <div className="autocomplete-header">
+                    <span className="header-icon">⚡</span>
+                    Click to search this place directly
                   </div>
-                ))}
+                  {autocompleteResults.map((place) => (
+                    <div
+                      key={place.place_id}
+                      className="autocomplete-item modern-item"
+                      onClick={() => handlePlaceSelect(place)}
+                    >
+                      <div className="item-icon">🏢</div>
+                      <div className="item-content">
+                        <div className="autocomplete-main">{place.main_text}</div>
+                        <div className="autocomplete-secondary">{place.secondary_text}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Categories Section */}
+          <div className="form-section">
+            <div className="form-section-header">
+              <div className="form-section-icon">🏷️</div>
+              <h3>Or Browse by Category</h3>
+            </div>
+            <div className="categories-grid modern-categories">
+              {availableCategories.map((category) => (
+                <div
+                  key={category}
+                  className={`category-chip modern-chip ${searchForm.selectedCategories.includes(category) ? 'selected' : ''}`}
+                  onClick={() => handleCategoryToggle(category)}
+                >
+                  <span className="chip-icon">
+                    {category === 'Restaurants' && '🍽️'}
+                    {category === 'Museums' && '🏛️'}
+                    {category === 'Parks & Recreation' && '🌳'}
+                    {category === 'Attractions' && '🎯'}
+                    {category === 'Shopping' && '🛍️'}
+                    {category === 'Hotels' && '🏨'}
+                    {category === 'Nightlife' && '🌃'}
+                    {category === 'Sports & Entertainment' && '⚽'}
+                    {category === 'Wellness' && '🧘'}
+                  </span>
+                  <span className="chip-text">{category}</span>
+                </div>
+              ))}
+            </div>
+            {searchForm.selectedCategories.length > 0 && !searchForm.city && (
+              <div className="form-help modern-help">
+                <span className="help-icon">⚠️</span>
+                When using categories, please select a city below
               </div>
             )}
           </div>
-          <small className="form-help">
-            Search for specific places by name
-          </small>
-        </div>
 
-        {/* Categories Section */}
-        <div className="form-group">
-          <label>Categories (Select Multiple)</label>
-          <div className="categories-grid">
-            {availableCategories.map((category) => (
-              <div
-                key={category}
-                className={`category-chip ${searchForm.selectedCategories.includes(category) ? 'selected' : ''}`}
-                onClick={() => handleCategoryToggle(category)}
-              >
-                {category}
-              </div>
-            ))}
-          </div>
-          <small className="form-help">
-            {searchForm.selectedCategories.length > 0 && !searchForm.city && 
-              "When using categories, please select a city below"}
-          </small>
-        </div>
-
-        {/* Location Section */}
-        <div className="form-group">
-          <label htmlFor="city">City (Required for Categories)</label>
-          <div className="autocomplete-container">
-            <input
-              id="city"
-              type="text"
-              placeholder="e.g., Los Angeles, New York, Chicago..."
-              value={searchForm.city}
-              onChange={(e) => handleInputChange('city', e.target.value)}
-              onFocus={() => searchForm.city.length >= 2 && setShowCityAutocomplete(true)}
-              onBlur={() => setTimeout(() => setShowCityAutocomplete(false), 200)}
-              className="form-input"
-            />
-            {showCityAutocomplete && cityAutocompleteResults.length > 0 && (
-              <div className="autocomplete-dropdown">
-                <div className="autocomplete-header">
-                  Click to select city and auto-fill state
+          {/* Location Section */}
+          <div className="form-section">
+            <div className="form-section-header">
+              <div className="form-section-icon">🌍</div>
+              <h3>Where?</h3>
+            </div>
+            
+            <div className="location-inputs">
+              <div className="input-group">
+                <div className="input-wrapper">
+                  <FaMapMarkerAlt className="input-icon" />
+                  <input
+                    id="city"
+                    type="text"
+                    placeholder="City (e.g., Los Angeles, New York)"
+                    value={searchForm.city}
+                    onChange={(e) => handleInputChange('city', e.target.value)}
+                    onFocus={() => searchForm.city.length >= 2 && setShowCityAutocomplete(true)}
+                    onBlur={() => setTimeout(() => setShowCityAutocomplete(false), 200)}
+                    className="modern-input"
+                  />
                 </div>
-                {cityAutocompleteResults.map((city) => (
-                  <div
-                    key={city.place_id}
-                    className="autocomplete-item"
-                    onClick={() => handleCitySelect(city)}
-                  >
-                    <div className="autocomplete-main">{city.city}</div>
-                    <div className="autocomplete-secondary">{city.state}</div>
+                {showCityAutocomplete && cityAutocompleteResults.length > 0 && (
+                  <div className="autocomplete-dropdown modern-dropdown">
+                    <div className="autocomplete-header">
+                      <span className="header-icon">🏙️</span>
+                      Click to select city and auto-fill state
+                    </div>
+                    {cityAutocompleteResults.map((city) => (
+                      <div
+                        key={city.place_id}
+                        className="autocomplete-item modern-item"
+                        onClick={() => handleCitySelect(city)}
+                      >
+                        <div className="item-icon">🏙️</div>
+                        <div className="item-content">
+                          <div className="autocomplete-main">{city.city}</div>
+                          <div className="autocomplete-secondary">{city.state}</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            )}
+
+              <div className="input-group">
+                <div className="input-wrapper">
+                  <span className="input-icon">🗺️</span>
+                  <input
+                    id="state"
+                    type="text"
+                    placeholder="State (e.g., California, New York)"
+                    value={searchForm.state}
+                    onChange={(e) => handleInputChange('state', e.target.value)}
+                    className="modern-input"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="form-help modern-help">
+              <span className="help-icon">💡</span>
+              {searchForm.selectedCategories.length > 0 ? 
+                "City is required when using categories" : 
+                "Location is optional - search nationwide or in specific areas"}
+            </div>
           </div>
-          <small className="form-help">
-            {searchForm.selectedCategories.length > 0 ? 
-              "Required when using categories" : 
-              "Optional - search within a specific city"}
-          </small>
-        </div>
 
-        <div className="form-group">
-          <label htmlFor="state">State</label>
-          <input
-            id="state"
-            type="text"
-            placeholder="e.g., California, New York, Texas..."
-            value={searchForm.state}
-            onChange={(e) => handleInputChange('state', e.target.value)}
-            className="form-input"
-          />
-          <small className="form-help">
-            Auto-filled when you select a city
-          </small>
+          <button 
+            type="button"
+            onClick={() => handleSearch()}
+            className="search-button modern-search-btn"
+            disabled={(!searchForm.placeType && searchForm.selectedCategories.length === 0) || searchLoading}
+          >
+            <div className="btn-content">
+              {searchLoading ? (
+                <>
+                  <div className="loading-spinner"></div>
+                  <span>Searching...</span>
+                </>
+              ) : (
+                <>
+                  <FaSearch className="btn-icon" />
+                  <span>Find Places</span>
+                </>
+              )}
+            </div>
+          </button>
         </div>
-
-        <button 
-          type="button"
-          onClick={() => handleSearch()}
-          className="search-button"
-          disabled={(!searchForm.placeType && searchForm.selectedCategories.length === 0) || searchLoading}
-        >
-          <FaSearch />
-          {searchLoading ? 'Searching...' : 'Search Places'}
-        </button>
       </div>
     </div>
   );
@@ -782,23 +874,34 @@ const Home = () => {
     
     return (
       <>
-        <div className="search-results-header">
-          <h2>Search Results</h2>
-          <button 
-            onClick={() => {
-              setViewMode('homepage');
-              setSearchResults([]);
-              setSearchForm({ placeType: '', state: '', city: '', zipCode: '' });
-              setSearchLoading(false);
-              // Clear URL parameters
-              window.history.pushState({}, '', window.location.pathname);
-            }}
-            className="back-button"
-          >
-            <FaTimes />
-            New Search
-          </button>
-        </div>
+        <div className="search-results-page">
+          <div className="search-results-header">
+            <div className="results-header-content">
+              <div className="results-title-section">
+                <h2 className="results-title">
+                  <span className="results-icon">🎯</span>
+                  Search Results
+        </h2>
+                <p className="results-count">
+                  Found {searchResults.length} amazing places
+                </p>
+              </div>
+              <button 
+                onClick={() => {
+                  setViewMode('homepage');
+                  setSearchResults([]);
+                  setSearchForm({ placeType: '', state: '', city: '', zipCode: '', selectedCategories: [] });
+                  setSearchLoading(false);
+                  // Clear URL parameters
+                  window.history.pushState({}, '', window.location.pathname);
+                }}
+                className="back-button modern-back-btn"
+              >
+                <FaTimes className="btn-icon" />
+                <span>New Search</span>
+              </button>
+            </div>
+          </div>
         
         {searchLoading ? (
           renderSearchSkeleton()
@@ -836,6 +939,7 @@ const Home = () => {
             <p>Try adjusting your search terms or selecting a different location.</p>
           </div>
         )}
+      </div>
     </>
   );
   };
@@ -868,7 +972,11 @@ const Home = () => {
               <div className="hero-actions">
             <button 
                   className="hero-search-button"
-                  onClick={() => setViewMode('search')}
+                  onClick={() => {
+                    setViewMode('search');
+                    // Small delay to ensure the search form renders before scrolling
+                    setTimeout(scrollToSearch, 100);
+                  }}
             >
                   <FaSearch className="button-icon" />
                   Start Exploring
@@ -889,7 +997,7 @@ const Home = () => {
           </div>
         </div>
 
-        <div className="places-container">
+        <div className="places-container" ref={searchSectionRef}>
           {console.log('🔍 Main render - viewMode:', viewMode, 'searchResults.length:', searchResults.length)}
           {viewMode === 'homepage' && renderHomepage()}
           {viewMode === 'search' && searchResults.length === 0 && renderSearchForm()}

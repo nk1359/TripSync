@@ -12,7 +12,8 @@ const AddToCalendarModal = ({ place, onClose }) => {
     description: '',
     startDate: new Date().toISOString().split('T')[0],
     endDate: '',
-    location: place?.city_name || '',
+    city: place?.city_name && place?.address ? `${place.city_name}, ${place.address.split(',').pop()?.trim()}` : (place?.city_name || ''),
+    address: place?.address || '',
     placeId: place?.place_id || '',
     groupId: ''
   });
@@ -58,7 +59,7 @@ const AddToCalendarModal = ({ place, onClose }) => {
         description: eventForm.description,
         start_date: eventForm.startDate,
         end_date: eventForm.endDate || null,
-        location: eventForm.location,
+        location: eventForm.city,
         place_id: eventForm.placeId,
         group_id: eventForm.groupId,
         created_by: currentUserId
@@ -142,13 +143,27 @@ const AddToCalendarModal = ({ place, onClose }) => {
             </div>
             
             <div className="form-group">
-              <label htmlFor="location">Location</label>
+              <label htmlFor="city">City</label>
               <input
-                id="location"
-                name="location"
+                id="city"
+                name="city"
                 type="text"
-                value={eventForm.location}
+                value={eventForm.city}
                 onChange={handleFormChange}
+                placeholder="Enter city..."
+              />
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="address">Address</label>
+              <input
+                id="address"
+                name="address"
+                type="text"
+                value={eventForm.address}
+                readOnly
+                className="readonly-field"
+                placeholder="Full address will appear here..."
               />
             </div>
             

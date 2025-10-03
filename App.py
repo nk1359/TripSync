@@ -2,16 +2,25 @@ from flask import Flask, send_from_directory, jsonify, request
 from flask_cors import CORS
 import mysql.connector
 import os
+from dotenv import load_dotenv
+import googlemaps
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__, static_folder='build', static_url_path='')
 CORS(app)
 
 db_config = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': 'admin',
-    'database': 'tripsync'
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'user': os.getenv('DB_USER', 'root'),
+    'password': os.getenv('DB_PASSWORD', 'admin'),
+    'database': os.getenv('DB_NAME', 'tripsync')
 }
+
+# Google Places API Configuration
+GOOGLE_PLACES_API_KEY = os.getenv('GOOGLE_PLACES_API_KEY')
+gmaps = googlemaps.Client(key=GOOGLE_PLACES_API_KEY) if GOOGLE_PLACES_API_KEY else None
 
 # API Endpoints (these all stay the same)
 
@@ -578,242 +587,813 @@ def get_friends(user_id):
         if conn:
             conn.close()
 
-@app.route('/api/top-places', methods=['GET'])
-def get_top_places():
+# Note: /api/top-places endpoint removed - now using /api/top-cities with Google Places API
+
+@app.route('/api/places/load-more', methods=['GET'])
+def load_more_places():
+    """Load more places for a specific category and city"""
+    if not gmaps:
+        return jsonify({
+            "error": "Google Places API is not configured",
+            "places": [],
+            "total": 0
+        }), 200
+    
     try:
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
-
-        # Modified query to use image_url from the places table directly
-        query = """
-        SELECT 
-            p.category,
-            p.id AS place_id,
-            p.name AS place_name,
-            c.city_name,
-            p.image_url
-        FROM places p
-        JOIN cities c ON p.city_id = c.id
-        WHERE p.id IN (
-            SELECT id FROM (
-                SELECT id,
-                       ROW_NUMBER() OVER (PARTITION BY category ORDER BY id) AS rn
-                FROM places
-            ) AS ranked
-            WHERE rn <= 5
-        )
-        ORDER BY p.category, c.city_name, p.id;
-        """
-
-        cursor.execute(query)
-        results = cursor.fetchall()
-
-        grouped = {}
-        for row in results:
-            category = row['category']
-            place = {
-                'place_id': row['place_id'],
-                'place_name': row['place_name'],
-                'city_name': row['city_name'],
-                'image_url': row['image_url']
-            }
-            grouped.setdefault(category, []).append(place)
-
-        return jsonify(grouped), 200
-
-    except mysql.connector.Error as err:
-        print("MySQL Error:", err)
-        return jsonify({'error': str(err)}), 500
-
-    finally:
-        if conn:
-            conn.close()
+        category = request.args.get('category', 'Attractions')
+        city = request.args.get('city', 'New York, NY')
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+        
+        # Map category to Google search terms
+        category_mapping = {
+            'Restaurants': 'restaurants',
+            'Museums': 'museums',
+            'Parks & Recreation': 'parks',
+            'Attractions': 'attractions',
+            'Shopping': 'shopping',
+            'Hotels': 'hotels',
+            'Nightlife': 'nightlife',
+            'Sports & Entertainment': 'sports venues',
+            'Wellness': 'spas'
+        }
+        
+        search_term = category_mapping.get(category, 'attractions')
+        query = f"{search_term} in {city} USA"
+        
+        places_result = gmaps.places(query=query)
+        
+        if places_result['status'] == 'OK':
+            places = places_result.get('results', [])
+            
+            # Apply pagination
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            paginated_places = places[start_idx:end_idx]
+            
+            formatted_places = []
+            for place in paginated_places:
+                place_id = place.get('place_id')
+                
+                # Get photo URL from original search result
+                photo_url = None
+                if 'photos' in place and len(place['photos']) > 0:
+                    photo_reference = place['photos'][0].get('photo_reference')
+                    if photo_reference:
+                        photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
+                
+                try:
+                    details = gmaps.place(place_id=place_id, fields=[
+                        'name', 'formatted_address', 'geometry', 
+                        'rating', 'type', 'url'
+                    ])
+                    
+                    if details['status'] == 'OK':
+                        result_data = details['result']
+                        
+                        # Get place type and convert to category
+                        place_type = result_data.get('type', [])
+                        if isinstance(place_type, str):
+                            place_type = [place_type]
+                        
+                        formatted_place = {
+                            'place_id': place_id,
+                            'place_name': result_data.get('name', ''),
+                            'address': result_data.get('formatted_address', ''),
+                            'city_name': city.split(',')[0],
+                            'category': extract_category_from_types(place_type),
+                            'image_url': photo_url,
+                            'rating': str(result_data.get('rating', '4.5')),
+                            'google_maps_url': result_data.get('url', ''),
+                            'lat': result_data['geometry']['location']['lat'] if 'geometry' in result_data else None,
+                            'lng': result_data['geometry']['location']['lng'] if 'geometry' in result_data else None
+                        }
+                        formatted_places.append(formatted_place)
+                except Exception as e:
+                    print(f"Error fetching place details for {place_id}: {e}")
+                    continue
+            
+            return jsonify({
+                'places': formatted_places,
+                'total': len(places),
+                'page': page,
+                'per_page': per_page,
+                'total_pages': (len(places) + per_page - 1) // per_page
+            }), 200
+        else:
+            return jsonify({
+                "error": f"Google Places API error: {places_result.get('status')}",
+                "places": [],
+                "total": 0
+            }), 200
+        
+    except Exception as e:
+        print("Error loading more places:", e)
+        return jsonify({
+            "error": str(e),
+            "places": [],
+            "total": 0
+        }), 200
 
 @app.route('/api/top-cities', methods=['GET'])
 def get_top_cities():
+    """Get popular places from Google Places API for top US cities"""
+    if not gmaps:
+        return jsonify({
+            "error": "Google Places API is not configured",
+            "message": "Please add your Google Places API key"
+        }), 500
+    
     try:
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
-
-        # Fetch top 5 cities (adjust as needed)
-        cities_query = """
-        SELECT c.id, c.city_name
-        FROM cities c 
-        ORDER BY c.id
-        LIMIT 5
-        """
-        cursor.execute(cities_query)
-        cities = cursor.fetchall()
-        
+        # Define popular US cities to showcase - limit for faster loading
+        cities = ['New York, NY', 'Los Angeles, CA', 'Chicago, IL', 'Miami, FL', 'Las Vegas, NV']
         result = {}
         
-        # For each city, get its top 5 places, INCLUDING the city_name
         for city in cities:
-            city_id = city['id']
-            city_name = city['city_name']
-            
-            places_query = """
-            SELECT 
-                p.id AS place_id,
-                p.name AS place_name,
-                p.category,
-                p.image_url,
-                c.city_name,         -- JOIN the cities table so we can SELECT c.city_name
-                '4.5' AS rating
-            FROM places p
-            JOIN cities c ON p.city_id = c.id
-            WHERE p.city_id = %s
-            LIMIT 5
-            """
-            
-            cursor.execute(places_query, (city_id,))
-            places = cursor.fetchall()
-            
-            result[city_name] = places
+            try:
+                # Search for top attractions in each US city
+                places_result = gmaps.places(query=f"top attractions in {city} USA")
+                
+                if places_result['status'] == 'OK':
+                    city_places = []
+                    city_display_name = city.split(',')[0]
+                    
+                    # Get details for first 3 places (reduced for faster loading)
+                    for place in places_result.get('results', [])[:3]:
+                        place_id = place.get('place_id')
+                        
+                        # Get photo URL from original search result (before place details)
+                        photo_url = None
+                        if 'photos' in place and len(place['photos']) > 0:
+                            photo_reference = place['photos'][0].get('photo_reference')
+                            if photo_reference:
+                                photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
+                        
+                        try:
+                            details = gmaps.place(place_id=place_id, fields=[
+                                'name', 'formatted_address', 'geometry', 
+                                'rating', 'type', 'url'
+                            ])
+                            
+                            if details['status'] == 'OK':
+                                result_data = details['result']
+                                
+                                # Get place type and convert to category
+                                place_type = result_data.get('type', [])
+                                if isinstance(place_type, str):
+                                    place_type = [place_type]
+                                
+                                city_places.append({
+                                    'place_id': place_id,
+                                    'place_name': result_data.get('name', ''),
+                                    'address': result_data.get('formatted_address', ''),
+                                    'city_name': city_display_name,
+                                    'category': extract_category_from_types(place_type),
+                                    'image_url': photo_url,
+                                    'rating': str(result_data.get('rating', '4.5')),
+                                    'google_maps_url': result_data.get('url', '')
+                                })
+                                print(f"  Added: {result_data.get('name', '')}")
+                            else:
+                                print(f"  Place details failed: {details['status']}")
+                        except Exception as e:
+                            print(f"  Error fetching place {place_id}: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            continue
+                    
+                    # Use city display name as key
+                    city_display_name = city.split(',')[0]
+                    result[city_display_name] = city_places
+                    print(f"Found {len(city_places)} places for {city_display_name}")
+                else:
+                    print(f"Error fetching places for {city}: {places_result.get('status')}")
+                    city_display_name = city.split(',')[0]
+                    result[city_display_name] = []
+                    
+            except Exception as e:
+                print(f"Error processing city {city}: {e}")
+                city_display_name = city.split(',')[0]
+                result[city_display_name] = []
             
         return jsonify(result), 200
 
-    except mysql.connector.Error as err:
-        print("MySQL Error:", err)
-        return jsonify({'error': str(err)}), 500
-    finally:
-        if conn:
-            conn.close()
+    except Exception as e:
+        print("Error fetching top cities from Google Places:", e)
+        return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/categories', methods=['GET'])
-def get_categories():
+@app.route('/api/states', methods=['GET'])
+def get_states():
+    """Get list of US states for search dropdown"""
+    states = [
+        {'code': 'AL', 'name': 'Alabama'}, {'code': 'AK', 'name': 'Alaska'}, {'code': 'AZ', 'name': 'Arizona'},
+        {'code': 'AR', 'name': 'Arkansas'}, {'code': 'CA', 'name': 'California'}, {'code': 'CO', 'name': 'Colorado'},
+        {'code': 'CT', 'name': 'Connecticut'}, {'code': 'DE', 'name': 'Delaware'}, {'code': 'FL', 'name': 'Florida'},
+        {'code': 'GA', 'name': 'Georgia'}, {'code': 'HI', 'name': 'Hawaii'}, {'code': 'ID', 'name': 'Idaho'},
+        {'code': 'IL', 'name': 'Illinois'}, {'code': 'IN', 'name': 'Indiana'}, {'code': 'IA', 'name': 'Iowa'},
+        {'code': 'KS', 'name': 'Kansas'}, {'code': 'KY', 'name': 'Kentucky'}, {'code': 'LA', 'name': 'Louisiana'},
+        {'code': 'ME', 'name': 'Maine'}, {'code': 'MD', 'name': 'Maryland'}, {'code': 'MA', 'name': 'Massachusetts'},
+        {'code': 'MI', 'name': 'Michigan'}, {'code': 'MN', 'name': 'Minnesota'}, {'code': 'MS', 'name': 'Mississippi'},
+        {'code': 'MO', 'name': 'Missouri'}, {'code': 'MT', 'name': 'Montana'}, {'code': 'NE', 'name': 'Nebraska'},
+        {'code': 'NV', 'name': 'Nevada'}, {'code': 'NH', 'name': 'New Hampshire'}, {'code': 'NJ', 'name': 'New Jersey'},
+        {'code': 'NM', 'name': 'New Mexico'}, {'code': 'NY', 'name': 'New York'}, {'code': 'NC', 'name': 'North Carolina'},
+        {'code': 'ND', 'name': 'North Dakota'}, {'code': 'OH', 'name': 'Ohio'}, {'code': 'OK', 'name': 'Oklahoma'},
+        {'code': 'OR', 'name': 'Oregon'}, {'code': 'PA', 'name': 'Pennsylvania'}, {'code': 'RI', 'name': 'Rhode Island'},
+        {'code': 'SC', 'name': 'South Carolina'}, {'code': 'SD', 'name': 'South Dakota'}, {'code': 'TN', 'name': 'Tennessee'},
+        {'code': 'TX', 'name': 'Texas'}, {'code': 'UT', 'name': 'Utah'}, {'code': 'VT', 'name': 'Vermont'},
+        {'code': 'VA', 'name': 'Virginia'}, {'code': 'WA', 'name': 'Washington'}, {'code': 'WV', 'name': 'West Virginia'},
+        {'code': 'WI', 'name': 'Wisconsin'}, {'code': 'WY', 'name': 'Wyoming'}, {'code': 'DC', 'name': 'Washington D.C.'}
+    ]
+    return jsonify(states), 200
+
+@app.route('/api/autocomplete', methods=['GET'])
+def autocomplete_places():
+    """Get place suggestions for autocomplete"""
+    if not gmaps:
+        return jsonify({
+            "error": "Google Places API is not configured",
+            "places": []
+        }), 200
+    
     try:
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
+        query = request.args.get('query', '').strip()
+        if not query or len(query) < 2:
+            return jsonify({"places": []}), 200
         
-        query = """
-        SELECT DISTINCT category 
-        FROM places 
-        WHERE category IS NOT NULL AND category != ''
-        ORDER BY category
-        """
+        # Use Google Places Autocomplete API
+        places_result = gmaps.places_autocomplete(
+            input_text=query,
+            types='establishment',
+            components={'country': 'us'}
+        )
         
-        cursor.execute(query)
-        categories = cursor.fetchall()
+        suggestions = []
+        for place in places_result[:8]:  # Limit to 8 suggestions
+            suggestion = {
+                'place_id': place['place_id'],
+                'name': place['description'],
+                'main_text': place['structured_formatting']['main_text'],
+                'secondary_text': place['structured_formatting'].get('secondary_text', '')
+            }
+            suggestions.append(suggestion)
         
-        category_list = [item['category'] for item in categories]
+        return jsonify({"places": suggestions}), 200
         
-        return jsonify(category_list), 200
+    except Exception as e:
+        print("Autocomplete error:", e)
+        return jsonify({
+            "error": str(e),
+            "places": []
+        }), 200
+
+@app.route('/api/autocomplete/cities', methods=['GET'])
+def autocomplete_cities():
+    """Get city suggestions for autocomplete"""
+    if not gmaps:
+        return jsonify({
+            "error": "Google Places API is not configured",
+            "cities": []
+        }), 200
+    
+    try:
+        query = request.args.get('query', '').strip()
+        if not query or len(query) < 2:
+            return jsonify({"cities": []}), 200
         
-    except mysql.connector.Error as err:
-        print("MySQL Error:", err)
-        return jsonify({'error': str(err)}), 500
-    finally:
-        if conn:
-            conn.close()
+        # Use Google Places Autocomplete API for cities
+        places_result = gmaps.places_autocomplete(
+            input_text=f"{query}, USA",
+            types='(cities)',
+            components={'country': 'us'}
+        )
+        
+        suggestions = []
+        for place in places_result[:6]:  # Limit to 6 suggestions
+            description = place['description']
+            # Extract city and state from description
+            parts = description.split(', ')
+            if len(parts) >= 2:
+                city_name = parts[0]
+                state_info = parts[1].replace(', USA', '')
+                suggestion = {
+                    'place_id': place['place_id'],
+                    'city': city_name,
+                    'state': state_info,
+                    'full_name': description
+                }
+                suggestions.append(suggestion)
+        
+        return jsonify({"cities": suggestions}), 200
+        
+    except Exception as e:
+        print("City autocomplete error:", e)
+        return jsonify({
+            "error": str(e),
+            "cities": []
+        }), 200
 
 @app.route('/api/places', methods=['GET'])
 def get_places():
+    """Get places using Google Places API instead of MySQL database"""
+    if not gmaps:
+        return jsonify({
+            "error": "Google Places API is not configured. Please add GOOGLE_PLACES_API_KEY to .env file",
+            "places": [],
+            "total": 0,
+            "page": 1,
+            "per_page": 10,
+            "total_pages": 0
+        }), 200
+    
     try:
         category = request.args.get('category', '')
         search_term = request.args.get('search', '')
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 10))
         
-        offset = (page - 1) * per_page
-        
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
-        
-        params = []
-        where_clauses = []
-        
-        if category and category != 'All':
-            where_clauses.append("p.category = %s")
-            params.append(category)
-        
+        # If there's a search term, use the Google Places search endpoint
         if search_term:
-            where_clauses.append("(p.name LIKE %s OR c.city_name LIKE %s)")
-            search_pattern = f"%{search_term}%"
-            params.extend([search_pattern, search_pattern])
+            # Redirect to Google Places search
+            return search_google_places()
         
-        where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
+        # For general browsing without search, show popular attractions in major US cities
+        # Reduce initial load by limiting cities and places per city
+        cities = ['New York, NY', 'Los Angeles, CA', 'Chicago, IL', 'Miami, FL', 'Las Vegas, NV']
         
-        # Modified query to use p.image_url from the places table
-        query = f"""
-        SELECT 
-            p.id AS place_id,
-            p.name AS place_name,
-            p.category,
-            c.city_name,
-            p.image_url,
-            '4.5' AS rating
-        FROM places p
-        JOIN cities c ON p.city_id = c.id
-        WHERE {where_clause}
-        ORDER BY p.name
-        LIMIT %s OFFSET %s
-        """
+        all_places = []
+        places_per_city = max(1, per_page // len(cities))  # Reduce places per city
         
-        params.extend([per_page, offset])
-        cursor.execute(query, params)
-        places = cursor.fetchall()
+        for city in cities:
+            try:
+                # Search for attractions in each city
+                query = f"attractions in {city} USA"
         
-        count_query = f"""
-        SELECT COUNT(*) as total
-        FROM places p
-        JOIN cities c ON p.city_id = c.id
-        WHERE {where_clause}
-        """
+                if category and category != 'All':
+                    # Map category to Google search terms
+                    category_mapping = {
+                        'Restaurants': 'restaurants',
+                        'Museums': 'museums',
+                        'Parks & Recreation': 'parks',
+                        'Attractions': 'attractions',
+                        'Shopping': 'shopping',
+                        'Hotels': 'hotels',
+                        'Nightlife': 'nightlife',
+                        'Sports & Entertainment': 'sports venues',
+                        'Wellness': 'spas'
+                    }
+                    if category in category_mapping:
+                        query = f"{category_mapping[category]} in {city} USA"
+                
+                places_result = gmaps.places(query=query)
+                
+                if places_result['status'] == 'OK':
+                    city_places = []
+                    city_display_name = city.split(',')[0]
+                    
+                    # Get details for places in this city
+                    for place in places_result.get('results', [])[:places_per_city]:
+                        place_id = place.get('place_id')
+                        
+                        # Get photo URL from original search result
+                        photo_url = None
+                        if 'photos' in place and len(place['photos']) > 0:
+                            photo_reference = place['photos'][0].get('photo_reference')
+                            if photo_reference:
+                                photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
+                        
+                        try:
+                            details = gmaps.place(place_id=place_id, fields=[
+                                'name', 'formatted_address', 'geometry', 
+                                'rating', 'type', 'url'
+                            ])
+                            
+                            if details['status'] == 'OK':
+                                result_data = details['result']
+                                
+                                # Get place type and convert to category
+                                place_type = result_data.get('type', [])
+                                if isinstance(place_type, str):
+                                    place_type = [place_type]
+                                
+                                formatted_place = {
+                                    'place_id': place_id,
+                                    'place_name': result_data.get('name', ''),
+                                    'address': result_data.get('formatted_address', ''),
+                                    'city_name': city_display_name,
+                                    'category': extract_category_from_types(place_type),
+                                    'image_url': photo_url,
+                                    'rating': str(result_data.get('rating', '4.5')),
+                                    'google_maps_url': result_data.get('url', ''),
+                                    'lat': result_data['geometry']['location']['lat'] if 'geometry' in result_data else None,
+                                    'lng': result_data['geometry']['location']['lng'] if 'geometry' in result_data else None
+                                }
+                                city_places.append(formatted_place)
+                        except Exception as e:
+                            print(f"Error fetching place details for {place_id}: {e}")
+                            continue
+                    
+                    all_places.extend(city_places)
+                    
+            except Exception as e:
+                print(f"Error processing city {city}: {e}")
+                continue
         
-        cursor.execute(count_query, params[:-2] if params else [])
-        total = cursor.fetchone()['total']
+        # Apply pagination
+        total = len(all_places)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_places = all_places[start_idx:end_idx]
         
         return jsonify({
-            'places': places,
+            'places': paginated_places,
             'total': total,
             'page': page,
             'per_page': per_page,
             'total_pages': (total + per_page - 1) // per_page
         }), 200
         
-    except mysql.connector.Error as err:
-        print("MySQL Error:", err)
-        return jsonify({'error': str(err)}), 500
-    finally:
-        if conn:
-            conn.close()
+    except Exception as e:
+        print("Error fetching places:", e)
+        return jsonify({
+            "error": str(e),
+            "places": [],
+            "total": 0,
+            "page": 1,
+            "per_page": 10,
+            "total_pages": 0
+        }), 200
 
-# New endpoint to get place details including address
-@app.route('/api/place/<int:place_id>', methods=['GET'])
-def get_place_details(place_id):
-    conn = None
+# New advanced search endpoint
+@app.route('/api/search', methods=['GET'])
+def advanced_search():
+    """Advanced search with place type, state, and optional city/zip"""
+    if not gmaps:
+        return jsonify({
+            "error": "Google Places API is not configured",
+            "places": [],
+            "total": 0
+        }), 200
+    
     try:
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
+        place_type = request.args.get('place_type', '').strip()
+        state = request.args.get('state', '').strip()
+        city = request.args.get('city', '').strip()
+        categories = request.args.get('categories', '').strip()
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
         
-        query = """
-        SELECT 
-            p.id, 
-            p.name, 
-            p.category,
-            p.address,
-            c.city_name
-        FROM places p
-        JOIN cities c ON p.city_id = c.id
-        WHERE p.id = %s
-        """
+        if not place_type and not categories:
+            return jsonify({
+                "error": "Place type or categories are required",
+                "places": [],
+                "total": 0
+            }), 200
         
-        cursor.execute(query, (place_id,))
-        place = cursor.fetchone()
+        # Determine search terms
+        search_terms = []
+        if place_type:
+            search_terms.append(place_type)
+        if categories:
+            category_list = categories.split(',')
+            search_terms.extend(category_list)
         
-        if not place:
-            return jsonify({"error": "Place not found"}), 404
+        # Build search query
+        search_term = ' and '.join(search_terms)
+        if city and state:
+            # Both city and state specified
+            query = f"{search_term} in {city}, {state} USA"
+        elif city:
+            # Only city specified
+            query = f"{search_term} in {city} USA"
+        elif state:
+            # Only state specified
+            query = f"{search_term} in {state} USA"
+        else:
+            # No location specified - search USA
+            query = f"{search_term} in USA"
+        
+        print(f"Searching for: {query}")
+        
+        # Use Places API text search
+        places_result = gmaps.places(query=query)
+        
+        if places_result['status'] not in ['OK', 'ZERO_RESULTS']:
+            return jsonify({
+                "error": f"Google Places API error: {places_result.get('status')}",
+                "places": [],
+                "total": 0
+            }), 200
+        
+        # Format the results
+        all_places = []
+        print(f"Processing {len(places_result.get('results', []))} search results")
+        
+        for i, place in enumerate(places_result.get('results', [])):
+            place_id = place.get('place_id')
+            print(f"Processing place {i+1}: {place.get('name', 'Unknown')} - {place_id}")
             
-        return jsonify(place), 200
+            # Get photo URL from original search result
+            photo_url = None
+            if 'photos' in place and len(place['photos']) > 0:
+                photo_reference = place['photos'][0].get('photo_reference')
+                if photo_reference:
+                    photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
+            
+            # Get place details for more information
+            try:
+                details = gmaps.place(place_id=place_id, fields=[
+                    'name', 'formatted_address', 'geometry', 
+                    'rating', 'type', 'url'
+                ])
+                
+                if details['status'] == 'OK':
+                    result = details['result']
+                    
+                    # Extract category from type
+                    place_type_list = result.get('type', [])
+                    if isinstance(place_type_list, str):
+                        place_type_list = [place_type_list]
+                    category = extract_category_from_types(place_type_list)
+                    
+                    # Check if result matches our criteria
+                    address = result.get('formatted_address', '')
+                    print(f"  Address: {address}")
+                    
+                    # If city was specified, check if the result is in the right area
+                    if city:
+                        print(f"  Checking city match: '{city}' in '{address.lower()}'")
+                        # For NYC, also include Brooklyn, Manhattan, Queens, etc.
+                        if city.lower() in ['new york', 'nyc', 'new york city']:
+                            if not any(borough in address.lower() for borough in ['new york', 'brooklyn', 'manhattan', 'queens', 'bronx', 'staten island']):
+                                print(f"  Skipping - not in NYC area")
+                                continue
+                        # For other cities, be more specific
+                        elif city.lower() not in address.lower():
+                            print(f"  Skipping - city doesn't match")
+                            continue
+                        else:
+                            print(f"  City match found!")
+                    
+                    # If state was specified, ensure it's in the right state
+                    if state:
+                        print(f"  Checking state match: '{state.upper()}' in '{address.upper()}'")
+                        if state.upper() not in address.upper():
+                            print(f"  Skipping - state doesn't match")
+                            continue
+                        else:
+                            print(f"  State match found!")
+                    
+                    formatted_place = {
+                        'place_id': place_id,
+                        'place_name': result.get('name', ''),
+                        'address': address,
+                        'city_name': extract_city_from_address(address),
+                        'category': category,
+                        'image_url': photo_url,
+                        'rating': result.get('rating', '4.5'),
+                        'google_maps_url': result.get('url', ''),
+                        'lat': result['geometry']['location']['lat'] if 'geometry' in result else None,
+                        'lng': result['geometry']['location']['lng'] if 'geometry' in result else None
+                    }
+                    all_places.append(formatted_place)
+                    print(f"  Added place: {formatted_place['place_name']}")
+                else:
+                    print(f"  Skipping - place details failed: {details.get('status')}")
+            except Exception as e:
+                print(f"Error fetching place details for {place_id}: {e}")
+                continue
         
-    except mysql.connector.Error as err:
-        print("MySQL Error:", err)
-        return jsonify({"error": str(err)}), 500
-    finally:
-        if conn:
-            conn.close()
+        # Apply pagination
+        total = len(all_places)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_places = all_places[start_idx:end_idx]
+        
+        print(f"Final results: {total} total places, returning {len(paginated_places)} places for page {page}")
+        
+        response_data = {
+            'places': paginated_places,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'total_pages': (total + per_page - 1) // per_page,
+            'query': query
+        }
+        
+        print(f"Response data: {response_data}")
+        return jsonify(response_data), 200
+        
+    except Exception as e:
+        print("Advanced search error:", e)
+        return jsonify({
+            "error": str(e),
+            "places": [],
+            "total": 0
+        }), 200
+
+# Google Places API endpoint (keep for backward compatibility)
+@app.route('/api/google-places/search', methods=['GET'])
+def search_google_places():
+    """
+    Search for places using Google Places API
+    Query params:
+    - query: search term (e.g., "restaurants in New York")
+    - category: filter by category (optional)
+    """
+    if not gmaps:
+        return jsonify({
+            "error": "Google Places API is not configured. Please add GOOGLE_PLACES_API_KEY to .env file",
+            "places": [],
+            "total": 0
+        }), 200
+    
+    try:
+        search_query = request.args.get('query', request.args.get('search', ''))
+        category_filter = request.args.get('category', '')
+        
+        if not search_query:
+            return jsonify({"error": "Query parameter is required", "places": [], "total": 0}), 200
+        
+        # Use Places API text search
+        places_result = gmaps.places(query=search_query)
+        
+        if places_result['status'] not in ['OK', 'ZERO_RESULTS']:
+            return jsonify({
+                "error": f"Google Places API error: {places_result.get('status')}",
+                "places": [],
+                "total": 0
+            }), 200
+        
+        # Format the results
+        formatted_places = []
+        for place in places_result.get('results', [])[:20]:  # Limit to 20 results
+            place_id = place.get('place_id')
+            
+            # Get photo URL from original search result
+            photo_url = None
+            if 'photos' in place and len(place['photos']) > 0:
+                photo_reference = place['photos'][0].get('photo_reference')
+                if photo_reference:
+                    photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
+            
+            # Get place details for more information
+            try:
+                details = gmaps.place(place_id=place_id, fields=[
+                    'name', 'formatted_address', 'geometry', 
+                    'rating', 'type', 'url'
+                ])
+                
+                if details['status'] == 'OK':
+                    result = details['result']
+                    
+                    # Extract category from type
+                    place_type = result.get('type', [])
+                    if isinstance(place_type, str):
+                        place_type = [place_type]
+                    category = extract_category_from_types(place_type)
+                    
+                    # Apply category filter if specified
+                    if category_filter and category_filter != 'All' and category != category_filter:
+                        continue
+                    
+                    formatted_place = {
+                        'place_id': place_id,
+                        'place_name': result.get('name', ''),
+                        'address': result.get('formatted_address', ''),
+                        'city_name': extract_city_from_address(result.get('formatted_address', '')),
+                        'category': category,
+                        'image_url': photo_url,
+                        'rating': result.get('rating', '4.5'),
+                        'google_maps_url': result.get('url', ''),
+                        'lat': result['geometry']['location']['lat'] if 'geometry' in result else None,
+                        'lng': result['geometry']['location']['lng'] if 'geometry' in result else None
+                    }
+                    formatted_places.append(formatted_place)
+            except Exception as e:
+                print(f"Error fetching details for place {place_id}: {e}")
+                continue
+        
+        return jsonify({
+            'places': formatted_places,
+            'total': len(formatted_places),
+            'page': 1,
+            'per_page': len(formatted_places),
+            'total_pages': 1
+        }), 200
+        
+    except Exception as e:
+        print("Google Places API Error:", e)
+        return jsonify({
+            "error": str(e),
+            "places": [],
+            "total": 0
+        }), 200
+
+def extract_city_from_address(address):
+    """Extract city name from formatted address"""
+    if not address:
+        return ''
+    # Address format is usually: Street, City, State ZIP, Country
+    parts = address.split(',')
+    if len(parts) >= 2:
+        # Usually the city is the second-to-last or third-to-last part
+        return parts[-3].strip() if len(parts) >= 3 else parts[-2].strip()
+    return ''
+
+def extract_category_from_types(types):
+    """Extract category from Google Place types"""
+    category_mapping = {
+        'restaurant': 'Restaurants',
+        'cafe': 'Restaurants',
+        'bar': 'Restaurants',
+        'food': 'Restaurants',
+        'museum': 'Museums',
+        'art_gallery': 'Museums',
+        'park': 'Parks & Recreation',
+        'amusement_park': 'Parks & Recreation',
+        'tourist_attraction': 'Attractions',
+        'zoo': 'Attractions',
+        'aquarium': 'Attractions',
+        'shopping_mall': 'Shopping',
+        'store': 'Shopping',
+        'lodging': 'Hotels',
+        'hotel': 'Hotels',
+        'night_club': 'Nightlife',
+        'casino': 'Nightlife',
+        'stadium': 'Sports & Entertainment',
+        'movie_theater': 'Sports & Entertainment',
+        'spa': 'Wellness',
+        'gym': 'Wellness'
+    }
+    
+    for place_type in types:
+        if place_type in category_mapping:
+            return category_mapping[place_type]
+    
+    return 'Attractions'
+
+# New endpoint to get place details from Google Places API
+@app.route('/api/place/<place_id>', methods=['GET'])
+def get_place_details(place_id):
+    """Get place details using Google Places API instead of MySQL database"""
+    if not gmaps:
+        return jsonify({"error": "Google Places API is not configured"}), 500
+    
+    try:
+        # Get place details from Google Places API
+        details = gmaps.place(place_id=place_id, fields=[
+            'name', 'formatted_address', 'geometry', 'photo', 
+            'rating', 'type', 'url', 'website', 'formatted_phone_number',
+            'opening_hours', 'price_level', 'user_ratings_total'
+        ])
+        
+        if details['status'] != 'OK':
+            return jsonify({"error": f"Place not found: {details.get('status')}"}), 404
+        
+        result = details['result']
+        
+        # Get photo URL
+        photo_url = None
+        photo_data = result.get('photo')
+        if photo_data and isinstance(photo_data, list) and len(photo_data) > 0:
+            photo_reference = photo_data[0].get('photo_reference')
+            if photo_reference:
+                photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
+        elif photo_data and isinstance(photo_data, dict):
+            photo_reference = photo_data.get('photo_reference')
+            if photo_reference:
+                photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
+        
+        # Get place type and convert to category
+        place_type = result.get('type', [])
+        if isinstance(place_type, str):
+            place_type = [place_type]
+        
+        # Format response
+        place_details = {
+            'id': place_id,
+            'name': result.get('name', ''),
+            'category': extract_category_from_types(place_type),
+            'address': result.get('formatted_address', ''),
+            'city_name': extract_city_from_address(result.get('formatted_address', '')),
+            'image_url': photo_url,
+            'rating': result.get('rating', 0),
+            'user_ratings_total': result.get('user_ratings_total', 0),
+            'price_level': result.get('price_level'),
+            'phone': result.get('formatted_phone_number'),
+            'website': result.get('website'),
+            'google_maps_url': result.get('url'),
+            'opening_hours': result.get('opening_hours'),
+            'lat': result['geometry']['location']['lat'] if 'geometry' in result else None,
+            'lng': result['geometry']['location']['lng'] if 'geometry' in result else None
+        }
+        
+        return jsonify(place_details), 200
+        
+    except Exception as e:
+        print("Error fetching place details:", e)
+        return jsonify({"error": str(e)}), 500
 
 # Calendar API Endpoints
 @app.route('/api/calendar/events', methods=['GET'])
@@ -832,6 +1412,7 @@ def get_calendar_events():
         cursor = conn.cursor(dictionary=True)
         
         # Build the query dynamically based on provided parameters
+        # Note: place_id now stores Google Places place_id instead of MySQL place id
         query = """
         SELECT 
             ce.event_id,
@@ -846,16 +1427,10 @@ def get_calendar_events():
             cg.name AS group_name,
             u.first_name,
             u.last_name,
-            u.username,
-            p.name AS place_name,
-            p.address AS place_address,
-            p.category AS place_category,
-            c.city_name
+            u.username
         FROM calendar_events ce
         JOIN chat_groups cg ON ce.group_id = cg.id
         JOIN users u ON ce.created_by = u.user_id
-        LEFT JOIN places p ON ce.place_id = p.id
-        LEFT JOIN cities c ON p.city_id = c.id
         WHERE ce.group_id IN (
             SELECT group_id 
             FROM group_members 
@@ -883,10 +1458,38 @@ def get_calendar_events():
         cursor.execute(query, params)
         events = cursor.fetchall()
         
-        # Format dates for JSON response
+        # Format dates and fetch place details from Google Places API if place_id exists
         for event in events:
             event['start_date'] = event['start_date'].isoformat() if event['start_date'] else None
             event['end_date'] = event['end_date'].isoformat() if event['end_date'] else None
+            
+            # Fetch place details from Google Places API if place_id exists
+            if event.get('place_id') and gmaps:
+                try:
+                    place_details = gmaps.place(place_id=event['place_id'], fields=[
+                        'name', 'formatted_address', 'type'
+                    ])
+                    
+                    if place_details['status'] == 'OK':
+                        place_data = place_details['result']
+                        event['place_name'] = place_data.get('name', '')
+                        event['place_address'] = place_data.get('formatted_address', '')
+                        event['place_category'] = extract_category_from_types(
+                            [place_data.get('type', [])] if isinstance(place_data.get('type'), str) 
+                            else place_data.get('type', [])
+                        )
+                        event['city_name'] = extract_city_from_address(place_data.get('formatted_address', ''))
+                except Exception as e:
+                    print(f"Error fetching place details for {event['place_id']}: {e}")
+                    event['place_name'] = ''
+                    event['place_address'] = ''
+                    event['place_category'] = ''
+                    event['city_name'] = ''
+            else:
+                event['place_name'] = ''
+                event['place_address'] = ''
+                event['place_category'] = ''
+                event['city_name'] = ''
         
         return jsonify({"events": events}), 200
     

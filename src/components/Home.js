@@ -11,19 +11,10 @@ const Home = () => {
   const navigate = useNavigate();
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [welcomeData, setWelcomeData] = useState(null);
+  const [selectedPlaceForModal, setSelectedPlaceForModal] = useState(null);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [placeImages, setPlaceImages] = useState([]);
   
-  // Ref for smooth scrolling to search section
-  const searchSectionRef = useRef(null);
-  
-  // Smooth scroll function
-  const scrollToSearch = () => {
-    if (searchSectionRef.current) {
-      searchSectionRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start'
-      });
-    }
-  };
   const [nearbySpots, setNearbySpots] = useState([]);
   const [localEvents, setLocalEvents] = useState([]);
   const [featuredCards, setFeaturedCards] = useState([]);
@@ -280,7 +271,18 @@ const Home = () => {
     try {
       const response = await fetch(`http://localhost:5000/api/autocomplete?query=${encodeURIComponent(query)}`);
       const data = await response.json();
-      setAutocompleteResults(data.places || []);
+      
+      // Transform the API response to match our UI expectations
+      const formatted = (data || []).map(item => {
+        const parts = item.description.split(',');
+        return {
+          place_id: item.place_id,
+          main_text: parts[0].trim(),
+          secondary_text: parts.slice(1).join(',').trim()
+        };
+      });
+      
+      setAutocompleteResults(formatted);
       setShowAutocomplete(true);
     } catch (error) {
       console.error('Error fetching autocomplete:', error);
@@ -299,7 +301,19 @@ const Home = () => {
     try {
       const response = await fetch(`http://localhost:5000/api/autocomplete/cities?query=${encodeURIComponent(query)}`);
       const data = await response.json();
-      setCityAutocompleteResults(data.cities || []);
+      
+      // Transform the API response to extract city and state
+      const formatted = (data || []).map(item => {
+        const parts = item.description.split(',').map(p => p.trim());
+        return {
+          place_id: item.place_id,
+          city: parts[0],
+          state: parts.length > 1 ? parts[parts.length - 2] : '', // Get state (second to last element)
+          description: item.description
+        };
+      });
+      
+      setCityAutocompleteResults(formatted);
       setShowCityAutocomplete(true);
     } catch (error) {
       console.error('Error fetching city autocomplete:', error);
@@ -319,8 +333,10 @@ const Home = () => {
       return;
     }
 
-    setSearchLoading(true);
+    // Immediately switch to results view and show skeleton
     setViewMode('search');
+    setSearchResults([]); // Clear old results
+    setSearchLoading(true);
     
     try {
       const params = new URLSearchParams({
@@ -471,8 +487,40 @@ const Home = () => {
 
 
 
+  const handlePlaceCardClick = async (place) => {
+    setSelectedPlaceForModal(place);
+    setCurrentImageIndex(0);
+    
+    // Fetch place details to get all photos
+    try {
+      const response = await fetch(`http://localhost:5000/api/place/${place.place_id}`);
+      const data = await response.json();
+      
+      // Use all photos from the API response
+      let images = [];
+      if (data.photos && data.photos.length > 0) {
+        images = data.photos;
+      } else if (place.image_url) {
+        images = [place.image_url];
+      } else {
+        images = ['https://via.placeholder.com/600x400/1a1a2e/ffffff?text=No+Image'];
+      }
+      
+      console.log(`Loaded ${images.length} images for ${place.place_name}`);
+      setPlaceImages(images);
+    } catch (error) {
+      console.error('Error fetching place details:', error);
+      setPlaceImages([place.image_url || 'https://via.placeholder.com/600x400/1a1a2e/ffffff?text=No+Image']);
+    }
+  };
+
   const renderPlaceCard = (place) => (
-    <div key={place.place_id} className="place-card">
+    <div 
+      key={place.place_id} 
+      className="place-card"
+      onClick={() => handlePlaceCardClick(place)}
+      style={{ cursor: 'pointer' }}
+    >
       <div className="place-image-container">
         <img
           src={place.image_url || 'https://via.placeholder.com/400x250/1a1a2e/ffffff?text=No+Image'}
@@ -482,7 +530,6 @@ const Home = () => {
             e.target.src = 'https://via.placeholder.com/400x250/1a1a2e/6366f1?text=No+Image+Available';
           }}
         />
-        <div className="place-image-overlay"></div>
         <div className="place-rating-overlay">
           <FaStar className="rating-stars" />
           <span>{place.rating || '4.5'}</span>
@@ -499,27 +546,6 @@ const Home = () => {
         
         <div className="place-category">
           {place.category}
-        </div>
-
-        <div className="place-actions">
-        <button
-            className="add-to-calendar-btn"
-          onClick={() => {
-            setSelectedPlace(place);
-            setIsCalendarModalOpen(true);
-          }}
-        >
-            <FaCalendarPlus />
-          Add to Calendar
-        </button>
-          
-          <button 
-            className="view-details-btn"
-            onClick={() => window.open(place.google_maps_url, '_blank')}
-          >
-            <FaMapMarkerAlt />
-            View on Maps
-          </button>
         </div>
       </div>
     </div>
@@ -575,6 +601,22 @@ const Home = () => {
 
   const renderSearchForm = () => (
     <div className="search-page">
+      <div className="back-to-home">
+        <button 
+          onClick={() => {
+            setViewMode('homepage');
+            setSearchResults([]);
+            setSearchForm({ placeType: '', state: '', city: '', zipCode: '', selectedCategories: [] });
+          }}
+          className="back-home-btn"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          Back to Home
+        </button>
+      </div>
       <div className="search-form-container">
         <div className="search-form-card">
           {/* Place Type Search */}
@@ -597,13 +639,22 @@ const Home = () => {
                   onChange={(e) => handleInputChange('placeType', e.target.value)}
                   onFocus={() => searchForm.placeType.length >= 2 && setShowAutocomplete(true)}
                   onBlur={() => setTimeout(() => setShowAutocomplete(false), 200)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      setShowAutocomplete(false);
+                      handleSearch();
+                    }
+                  }}
                   className="modern-input"
                 />
               </div>
               {showAutocomplete && autocompleteResults.length > 0 && (
                 <div className="autocomplete-dropdown modern-dropdown">
                   <div className="autocomplete-header">
-                    <span className="header-icon">⚡</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '0.5rem' }}>
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
                     Click to search this place directly
                   </div>
                   {autocompleteResults.map((place) => (
@@ -612,7 +663,10 @@ const Home = () => {
                       className="autocomplete-item modern-item"
                       onClick={() => handlePlaceSelect(place)}
                     >
-                      <div className="item-icon">🏢</div>
+                      <svg className="item-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                      </svg>
                       <div className="item-content">
                         <div className="autocomplete-main">{place.main_text}</div>
                         <div className="autocomplete-secondary">{place.secondary_text}</div>
@@ -690,13 +744,23 @@ const Home = () => {
                     onChange={(e) => handleInputChange('city', e.target.value)}
                     onFocus={() => searchForm.city.length >= 2 && setShowCityAutocomplete(true)}
                     onBlur={() => setTimeout(() => setShowCityAutocomplete(false), 200)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        setShowCityAutocomplete(false);
+                        handleSearch();
+                      }
+                    }}
                     className="modern-input"
                   />
                 </div>
                 {showCityAutocomplete && cityAutocompleteResults.length > 0 && (
                   <div className="autocomplete-dropdown modern-dropdown">
                     <div className="autocomplete-header">
-                      <span className="header-icon">🏙️</span>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '0.5rem' }}>
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                      </svg>
                       Click to select city and auto-fill state
                     </div>
                     {cityAutocompleteResults.map((city) => (
@@ -705,7 +769,12 @@ const Home = () => {
                         className="autocomplete-item modern-item"
                         onClick={() => handleCitySelect(city)}
                       >
-                        <div className="item-icon">🏙️</div>
+                        <svg className="item-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="3" y="3" width="7" height="7"></rect>
+                          <rect x="14" y="3" width="7" height="7"></rect>
+                          <rect x="14" y="14" width="7" height="7"></rect>
+                          <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg>
                         <div className="item-content">
                           <div className="autocomplete-main">{city.city}</div>
                           <div className="autocomplete-secondary">{city.state}</div>
@@ -718,13 +787,23 @@ const Home = () => {
 
               <div className="input-group">
                 <div className="input-wrapper">
-                  <span className="input-icon">🗺️</span>
+                  <svg className="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                  </svg>
                   <input
                     id="state"
                     type="text"
                     placeholder="State (e.g., California, New York)"
                     value={searchForm.state}
                     onChange={(e) => handleInputChange('state', e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSearch();
+                      }
+                    }}
                     className="modern-input"
                   />
                 </div>
@@ -747,20 +826,11 @@ const Home = () => {
             type="button"
             onClick={() => handleSearch()}
             className="search-button modern-search-btn"
-            disabled={(!searchForm.placeType && searchForm.selectedCategories.length === 0) || searchLoading}
+            disabled={!searchForm.placeType && searchForm.selectedCategories.length === 0}
           >
             <div className="btn-content">
-              {searchLoading ? (
-                <>
-                  <div className="loading-spinner"></div>
-                  <span>Searching...</span>
-                </>
-              ) : (
-                <>
-                  <FaSearch className="btn-icon" />
-                  <span>Find Places</span>
-                </>
-              )}
+              <FaSearch className="btn-icon" />
+              <span>Find Places</span>
             </div>
           </button>
         </div>
@@ -776,32 +846,53 @@ const Home = () => {
     return (
       <>
         <div className="search-results-page">
+          <div className="results-top-bar">
+            <button 
+              onClick={() => {
+                setViewMode('homepage');
+                setSearchResults([]);
+                setSearchForm({ placeType: '', state: '', city: '', zipCode: '', selectedCategories: [] });
+                setSearchLoading(false);
+                window.history.pushState({}, '', window.location.pathname);
+              }}
+              className="back-home-btn"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+              Back to Home
+            </button>
+          </div>
+          
           <div className="search-results-header">
             <div className="results-header-content">
-              <div className="results-title-section">
-                <h2 className="results-title">
-                  <span className="results-icon">🎯</span>
-                  Search Results
-        </h2>
-                <p className="results-count">
-                  Found {searchResults.length} amazing places
-                </p>
-              </div>
-              <button 
-                onClick={() => {
-                  setViewMode('homepage');
-                  setSearchResults([]);
-                  setSearchForm({ placeType: '', state: '', city: '', zipCode: '', selectedCategories: [] });
-                  setSearchLoading(false);
-                  // Clear URL parameters
-                  window.history.pushState({}, '', window.location.pathname);
-                }}
-                className="back-button modern-back-btn"
-              >
-                <FaTimes className="btn-icon" />
-                <span>New Search</span>
-              </button>
+              <h2 className="results-title">
+                <svg className="results-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <path d="m21 21-4.35-4.35"></path>
+                </svg>
+                Search Results
+              </h2>
+              <p className="results-count">
+                Found {searchResults.length} amazing places
+              </p>
             </div>
+            
+            <button 
+              onClick={() => {
+                setViewMode('search');
+                setSearchResults([]);
+                setSearchLoading(false);
+              }}
+              className="new-search-btn"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+              </svg>
+              <span>New Search</span>
+            </button>
           </div>
         
         {searchLoading ? (
@@ -875,10 +966,7 @@ const Home = () => {
                   <>
                     <button 
                       className="hero-search-button"
-                      onClick={() => {
-                        setViewMode('search');
-                        setTimeout(scrollToSearch, 100);
-                      }}
+                      onClick={() => setViewMode('search')}
                     >
                       <FaSearch className="button-icon" />
                       Start Exploring
@@ -916,19 +1004,132 @@ const Home = () => {
           </div>
         )}
 
-        <div className="places-container" ref={searchSectionRef}>
+        <div className="places-container">
           {console.log('🔍 Main render - viewMode:', viewMode, 'searchResults.length:', searchResults.length)}
           {viewMode === 'homepage' && renderHomepage()}
-          {viewMode === 'search' && searchResults.length === 0 && renderSearchForm()}
-          {viewMode === 'search' && searchResults.length > 0 && renderSearchResults()}
+          {viewMode === 'search' && !searchLoading && searchResults.length === 0 && renderSearchForm()}
+          {viewMode === 'search' && (searchLoading || searchResults.length > 0) && renderSearchResults()}
         </div>
       </div>
       
       {isCalendarModalOpen && selectedPlace && (
-      <AddToCalendarModal 
-        place={selectedPlace} 
-        onClose={() => setIsCalendarModalOpen(false)} 
-      />
+        <AddToCalendarModal 
+          place={selectedPlace} 
+          onClose={() => setIsCalendarModalOpen(false)} 
+        />
+      )}
+
+      {selectedPlaceForModal && (
+        <div className="place-modal-overlay" onClick={() => setSelectedPlaceForModal(null)}>
+          <div className="place-modal-content" onClick={(e) => e.stopPropagation()}>
+            <button 
+              className="close-modal-btn"
+              onClick={() => setSelectedPlaceForModal(null)}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+
+            <div className="modal-image-container">
+              <img
+                src={placeImages[currentImageIndex] || selectedPlaceForModal.image_url || 'https://via.placeholder.com/600x400/1a1a2e/ffffff?text=No+Image'}
+                alt={selectedPlaceForModal.place_name}
+                className="modal-place-image"
+                onError={(e) => {
+                  e.target.src = 'https://via.placeholder.com/600x400/1a1a2e/6366f1?text=No+Image+Available';
+                }}
+              />
+              
+              {placeImages.length > 1 && (
+                <>
+                  <button
+                    className="image-nav-btn prev"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentImageIndex((prev) => (prev === 0 ? placeImages.length - 1 : prev - 1));
+                    }}
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                  </button>
+                  
+                  <button
+                    className="image-nav-btn next"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentImageIndex((prev) => (prev === placeImages.length - 1 ? 0 : prev + 1));
+                    }}
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </button>
+                  
+                  <div className="image-indicators">
+                    {placeImages.map((_, index) => (
+                      <div
+                        key={index}
+                        className={`image-indicator ${index === currentImageIndex ? 'active' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCurrentImageIndex(index);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="modal-place-details">
+              <div className="modal-header-section">
+                <h2 className="modal-place-name">{selectedPlaceForModal.place_name}</h2>
+                <div className="modal-rating">
+                  <FaStar className="rating-stars" />
+                  <span>{selectedPlaceForModal.rating || '4.5'}</span>
+                </div>
+              </div>
+
+              <div className="modal-location">
+                <FaMapMarkerAlt className="location-icon" />
+                <span>{selectedPlaceForModal.address || selectedPlaceForModal.city_name}</span>
+              </div>
+
+              <div className="modal-category">
+                {selectedPlaceForModal.category}
+              </div>
+
+              <div className="modal-actions">
+                <button
+                  className="modal-action-btn primary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedPlace(selectedPlaceForModal);
+                    setIsCalendarModalOpen(true);
+                    setSelectedPlaceForModal(null);
+                  }}
+                >
+                  <FaCalendarPlus />
+                  Add to Calendar
+                </button>
+                
+                <button 
+                  className="modal-action-btn secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(selectedPlaceForModal.google_maps_url, '_blank');
+                  }}
+                >
+                  <FaMapMarkerAlt />
+                  View on Maps
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </Layout>
   );

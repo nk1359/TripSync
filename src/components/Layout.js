@@ -111,6 +111,10 @@ const Layout = ({ children }) => {
 
   const handleNavigation = (path) => {
     navigate(path);
+    // Force reload if navigating to home
+    if (path === '/home' || path === '/') {
+      window.location.href = path;
+    }
     if (isMobile) {
       setIsNavOpen(false);
       document.body.classList.remove('sidebar-open');

@@ -1,54 +1,39 @@
-/* Global Dark Theme */
+/* Global Minimalist Dark Theme */
 :root {
-  /* Dark Theme Colors */
-  --primary-color: #6366f1;
-  --primary-dark: #4f46e5;
-  --primary-light: #818cf8;
-  --secondary-color: #8b5cf6;
-  --accent-color: #06b6d4;
-  --accent-pink: #ec4899;
-  --success-color: #10b981;
-  --danger-color: #ef4444;
-  --warning-color: #f59e0b;
+  /* Primary Colors */
+  --primary-color: #ffffff;
+  --primary-dark: #f3f4f6;
+  --primary-light: #d1d5db;
   
   /* Dark Backgrounds */
-  --bg-color: #0f0f23;
-  --bg-secondary: #1a1a2e;
-  --bg-tertiary: #16213e;
-  --card-bg: #1e1e3f;
-  --bg-hover: #2a2a4a;
-  --bg-glass: rgba(30, 30, 63, 0.8);
+  --bg-color: #18181b;
+  --bg-secondary: #000000;
+  --bg-tertiary: #09090b;
+  --card-bg: #000000;
+  --bg-hover: #27272a;
+  --bg-glass: rgba(0, 0, 0, 0.8);
   
   /* Text Colors */
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
-  --text-accent: #60a5fa;
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-muted: #6b7280;
+  --text-gray-500: #6b7280;
   
-  /* Borders & Effects */
-  --border-color: #374151;
-  --border-light: #4b5563;
-  --hover-color: #2a2a4a;
-  
-  /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  --gradient-secondary: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
-  --gradient-accent: linear-gradient(135deg, #ec4899 0%, #f59e0b 100%);
-  
-  /* Shadows */
-  --shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.6);
-  --shadow-xl: 0 25px 50px rgba(0, 0, 0, 0.8);
+  /* Borders */
+  --border-color: #27272a;
+  --border-gray-900: #1c1917;
+  --border-gray-800: #27272a;
+  --hover-color: #27272a;
   
   /* Effects */
-  --blur: blur(20px);
-  --border-radius: 12px;
-  --border-radius-lg: 20px;
-  --border-radius-xl: 24px;
-  --transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  --border-radius: 0px;
+  --border-radius-sm: 4px;
+  --border-radius-md: 0px;
+  --border-radius-lg: 0px;
+  --transition: all 0.2s ease;
 }
 
-/* Global Dark Theme Styles */
+/* Global Minimalist Styles */
 * {
   box-sizing: border-box;
 }
@@ -56,7 +41,9 @@
 body {
   background-color: var(--bg-color) !important;
   color: var(--text-primary) !important;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 300;
+  line-height: 1.5;
 }
 
 .App {

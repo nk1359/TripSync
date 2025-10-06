@@ -23,7 +23,9 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={user ? <Home /> : <Login />} />
+        <Route path="/" element={<Home />} />
+        <Route path="/home" element={<Home />} />
+        <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/chats" element={user ? <Chats /> : <Navigate to="/" replace />} />
         <Route path="/chats/:groupId" element={user ? <ChatRoom /> : <Navigate to="/" replace />} />

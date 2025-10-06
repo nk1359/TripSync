@@ -100,11 +100,13 @@ const Layout = ({ children }) => {
     navigate('/');
   };
 
-  // Only include Home, Chat, and Calendar in the sidebar navigation
-  const navItems = [
-    { icon: <FaHome />, text: "Home", path: "/home" },
-    { icon: <FaComments />, text: "Chat", path: "/chats" },
-    { icon: <FaCalendarAlt />, text: "Calendar", path: "/calendar" }
+  // Navigation items - show different items based on auth status
+  const navItems = user ? [
+    { text: "Home", path: "/home" },
+    { text: "Planner", path: "/calendar" },
+    { text: "Chat", path: "/chats" }
+  ] : [
+    { text: "Home", path: "/" }
   ];
 
   const handleNavigation = (path) => {
@@ -243,8 +245,7 @@ const Layout = ({ children }) => {
         <div className="top-bar">
           <div className="left-area">
             <div className="app-logo">
-              <span className="logo-icon">🌍</span>
-              <span className="logo-text">TripSync</span>
+              <img src="/tripsync_logo.PNG" alt="TripSync" className="logo-image" />
             </div>
           </div>
           
@@ -258,7 +259,6 @@ const Layout = ({ children }) => {
                       className="nav-link"
                       style={{ cursor: 'pointer' }}
                     >
-                      <span className="nav-icon">{item.icon}</span>
                       <span className="nav-text">{item.text}</span>
                     </div>
                   </li>
@@ -268,100 +268,120 @@ const Layout = ({ children }) => {
           </div>
           
           <div className="right-area">
-            {/* Notification Bell */}
-            <div 
-              ref={notificationRef}
-              className="notification-bell" 
-              onClick={handleNotificationClick}
-            >
-              <FaBell />
-              {friendRequests.length > 0 && (
-                <span className="notification-badge">{friendRequests.length}</span>
-              )}
-              
-              {showNotifications && (
-                <div className="notification-dropdown">
-                  <div className="dropdown-header">
-                    Friend Requests
-                  </div>
-                  <div className="notification-list">
-                    {friendRequests.length > 0 ? (
-                      friendRequests.map((request) => (
-                        <div key={request.id} className="notification-item">
-                          <div className="notification-content">
-                            <div className="notification-avatar">
-                              {request.first_name.charAt(0)}
-                            </div>
-                            <div className="notification-details">
-                              <div className="notification-title">
-                                {request.first_name} {request.last_name}
-                              </div>
-                              <div className="notification-subtitle">
-                                @{request.username}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="notification-actions">
-                            <button 
-                              className="accept-button" 
-                              onClick={() => acceptFriendRequest(request.id)}
-                              aria-label="Accept friend request"
-                            >
-                              <FaCheckCircle />
-                            </button>
-                            <button 
-                              className="reject-button"
-                              onClick={() => rejectFriendRequest(request.id)}
-                              aria-label="Reject friend request"
-                            >
-                              <FaTimesCircle />
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="empty-notifications">
-                        No pending friend requests.
+            {user ? (
+              <>
+                {/* Notification Bell - Only for logged-in users */}
+                <div 
+                  ref={notificationRef}
+                  className="notification-bell" 
+                  onClick={handleNotificationClick}
+                >
+                  <FaBell />
+                  {friendRequests.length > 0 && (
+                    <span className="notification-badge">{friendRequests.length}</span>
+                  )}
+                  
+                  {showNotifications && (
+                    <div className="notification-dropdown">
+                      <div className="dropdown-header">
+                        Friend Requests
                       </div>
-                    )}
-                  </div>
+                      <div className="notification-list">
+                        {friendRequests.length > 0 ? (
+                          friendRequests.map((request) => (
+                            <div key={request.id} className="notification-item">
+                              <div className="notification-content">
+                                <div className="notification-avatar">
+                                  {request.first_name.charAt(0)}
+                                </div>
+                                <div className="notification-details">
+                                  <div className="notification-title">
+                                    {request.first_name} {request.last_name}
+                                  </div>
+                                  <div className="notification-subtitle">
+                                    @{request.username}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="notification-actions">
+                                <button 
+                                  className="accept-button" 
+                                  onClick={() => acceptFriendRequest(request.id)}
+                                  aria-label="Accept friend request"
+                                >
+                                  <FaCheckCircle />
+                                </button>
+                                <button 
+                                  className="reject-button"
+                                  onClick={() => rejectFriendRequest(request.id)}
+                                  aria-label="Reject friend request"
+                                >
+                                  <FaTimesCircle />
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="empty-notifications">
+                            No pending friend requests.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            
-            {/* Profile Menu */}
-            <div 
-              ref={profileRef}
-              className="profile-icon" 
-              onClick={handleProfileClick}
-            >
-              {user && user.avatar ? (
-                <img src={user.avatar} alt="Profile" className="avatar-img" />
-              ) : (
-                <div className="user-avatar">
-                  {user && user.first_name ? user.first_name.charAt(0).toUpperCase() : <FaUser />}
+                
+                {/* Profile Menu - Only for logged-in users */}
+                <div 
+                  ref={profileRef}
+                  className="profile-icon" 
+                  onClick={handleProfileClick}
+                >
+                  {user.avatar ? (
+                    <img src={user.avatar} alt="Profile" className="avatar-img" />
+                  ) : (
+                    <div className="user-avatar">
+                      {user.first_name ? user.first_name.charAt(0).toUpperCase() : <FaUser />}
+                    </div>
+                  )}
+                  
+                  {dropdownOpen && (
+                    <div className="dropdown-menu">
+                      <div className="dropdown-header">
+                        Hello, {user.first_name}
+                      </div>
+                      <button 
+                        onClick={() => { setShowFriendSearchModal(true); setDropdownOpen(false); }} 
+                        className="dropdown-item"
+                      >
+                        <FaUserFriends className="dropdown-icon" />
+                        <span>Add Friends</span>
+                      </button>
+                      <button onClick={handleSignOut} className="dropdown-item">
+                        <FaSignOutAlt className="dropdown-icon" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-              
-              {dropdownOpen && (
-                <div className="dropdown-menu">
-                  <div className="dropdown-header">
-                    Hello, {user ? user.first_name : 'Explorer'}
-                  </div>
-                  <button 
-                    onClick={() => { setShowFriendSearchModal(true); setDropdownOpen(false); }} 
-                    className="dropdown-item"
-                  >
-                    <FaUserFriends className="dropdown-icon" />
-                    <span>Add Friends</span>
-                  </button>
-                  <button onClick={handleSignOut} className="dropdown-item">
-                    <FaSignOutAlt className="dropdown-icon" />
-                    <span>Sign Out</span>
-                  </button>
-                </div>
-              )}
-            </div>
+              </>
+            ) : (
+              <>
+                {/* Auth buttons for logged-out users */}
+                <button 
+                  onClick={() => navigate('/login')} 
+                  className="auth-button sign-in-btn"
+                >
+                  Sign In
+                </button>
+                <button 
+                  onClick={() => navigate('/register')} 
+                  className="auth-button get-started-btn"
+                >
+                  Get Started
+                </button>
+              </>
+            )}
           </div>
         </div>
         

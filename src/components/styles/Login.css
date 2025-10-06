@@ -3,11 +3,11 @@
   height: 100vh;
   margin: 0;
   padding: 0;
-  background-color: #f4f4f4; /* Light gray background to contrast the card */
+  background-color: #18181b;
   display: flex;
   justify-content: center;
   align-items: center;
-  font-family: Arial, sans-serif;
+  font-family: system-ui, -apple-system, sans-serif;
 }
 
 /* === Card Container === */
@@ -15,16 +15,16 @@
   width: 100%;
   max-width: 400px;
   padding: 2rem;
-  background-color: #fff;
-  border-radius: 20px;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+  background-color: #000000;
+  border: 1px solid #27272a;
   text-align: center;
 }
 
 .login-container h2 {
   margin-bottom: 1.5rem;
-  font-size: 1.8rem;
-  color: #333;
+  font-size: 1.5rem;
+  font-weight: 300;
+  color: #ffffff;
 }
 
 /* === Form === */
@@ -37,10 +37,22 @@
 .login-container input {
   width: 100%;
   margin-bottom: 0.75rem;
-  padding: 0.75rem;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  font-size: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #27272a;
+  background: transparent;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 300;
+  transition: all 0.2s ease;
+}
+
+.login-container input:focus {
+  outline: none;
+  border-color: #ffffff;
+}
+
+.login-container input::placeholder {
+  color: #6b7280;
 }
 
 /* === Button === */
@@ -48,35 +60,39 @@
   width: 100%;
   padding: 0.75rem;
   border: none;
-  border-radius: 5px;
-  font-size: 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
-  color: #fff;
-  background-color: #007bff;
+  color: #000000;
+  background-color: #ffffff;
   margin-top: 0.75rem;
-  transition: background-color 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 .btn:hover {
-  background-color: #0056b3;
+  background-color: #d1d5db;
 }
 
 /* === Error Message === */
 .error-message {
-  color: #dc3545;
+  color: #ef4444;
   margin-bottom: 1rem;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 300;
 }
 
 /* === Link === */
 .link {
   display: block;
   margin-top: 1rem;
-  color: #007bff;
+  color: #6b7280;
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: color 0.2s ease;
 }
 
 .link:hover {
-  text-decoration: underline;
+  color: #ffffff;
+  text-decoration: none;
 }

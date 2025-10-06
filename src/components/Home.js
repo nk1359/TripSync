@@ -1,10 +1,14 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { AuthContext } from './AuthContext';
 import Layout from './Layout';
 import './styles/Home.css';
 import AddToCalendarModal from './AddToCalendarModal';
 import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft, FaChevronRight, FaTimes } from 'react-icons/fa';
 
 const Home = () => {
+  const { user } = useContext(AuthContext);
+  const navigate = useNavigate();
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [welcomeData, setWelcomeData] = useState(null);
   
@@ -47,6 +51,7 @@ const Home = () => {
   const [cityAutocompleteResults, setCityAutocompleteResults] = useState([]);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [showCityAutocomplete, setShowCityAutocomplete] = useState(false);
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   
   // Available categories
   const availableCategories = [
@@ -65,13 +70,19 @@ const Home = () => {
   const loadHomepageContent = async () => {
     setLoading(true);
     
-    // Load welcome data first (instant)
-    loadWelcomeData();
+    // Load welcome data first (instant) - only for logged-in users
+    if (user) {
+      loadWelcomeData();
+    }
     
     // Load other sections with delays to avoid overwhelming
     setTimeout(() => loadFeaturedCards(), 100);
     setTimeout(() => loadNearbySpots(), 200);
-    setTimeout(() => loadLocalEvents(), 300);
+    
+    // Only load events for logged-in users
+    if (user) {
+      setTimeout(() => loadLocalEvents(), 300);
+    }
     
     setLoading(false);
   };
@@ -143,7 +154,7 @@ const Home = () => {
 
   // Load featured cards (lightweight - no API calls)
   const loadFeaturedCards = () => {
-    const cards = [
+    const cards = user ? [
       {
         icon: "🔍",
         title: "Quick Search",
@@ -171,6 +182,25 @@ const Home = () => {
         description: "12 places saved - ready for your next adventure",
         action: "View Favorites",
         color: "linear-gradient(45deg, #ffecd2, #fcb69f)"
+      }
+    ] : [
+      {
+        icon: "🗺️",
+        title: "Itinerary Builder",
+        description: "Create detailed day-by-day plans with destinations, activities, and bookings",
+        action: "Get Started"
+      },
+      {
+        icon: "👥",
+        title: "Collaborate",
+        description: "Invite friends and family to plan together with real-time updates",
+        action: "Get Started"
+      },
+      {
+        icon: "📍",
+        title: "Save Places",
+        description: "Bookmark hotels, restaurants, and attractions for easy reference",
+        action: "Get Started"
       }
     ];
     setFeaturedCards(cards);
@@ -540,164 +570,20 @@ const Home = () => {
 
   const renderHomepage = () => (
     <>
-      {/* User Dashboard */}
-      {welcomeData && (
-        <div className="dashboard-section">
-          <div className="dashboard-content">
-            <div className="dashboard-header">
-              <h2 className="dashboard-greeting">{welcomeData.greeting}</h2>
-              <p className="dashboard-subtitle">{welcomeData.userName}</p>
-            </div>
-            
-            <div className="dashboard-grid">
-              {/* Quick Stats */}
-              <div className="stats-section">
-                <h3 className="section-title">Your Overview</h3>
-                <div className="stats-grid">
-                  <div className="stat-card">
-                    <div className="stat-icon">📅</div>
-                    <div className="stat-number">{welcomeData.quickStats.upcomingEvents}</div>
-                    <div className="stat-label">Upcoming Events</div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-icon">⭐</div>
-                    <div className="stat-number">{welcomeData.quickStats.savedPlaces}</div>
-                    <div className="stat-label">Saved Places</div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-icon">💬</div>
-                    <div className="stat-number">{welcomeData.quickStats.groupChats}</div>
-                    <div className="stat-label">Active Groups</div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-icon">👥</div>
-                    <div className="stat-number">{welcomeData.quickStats.friends}</div>
-                    <div className="stat-label">Friends</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Recent Activity */}
-              <div className="activity-section">
-                <h3 className="section-title">Recent Activity</h3>
-                <div className="activity-feed">
-                  {welcomeData.recentActivity.map((activity, index) => (
-                    <div key={index} className="activity-item">
-                      <div className="activity-icon">
-                        {activity.type === 'event' && '📅'}
-                        {activity.type === 'group' && '💬'}
-                        {activity.type === 'place' && '📍'}
-                        {activity.type === 'friend' && '👥'}
-                      </div>
-                      <div className="activity-content">
-                        <p className="activity-message">{activity.message}</p>
-                        <div className="activity-meta">
-                          <span className="activity-time">{activity.time}</span>
-                          <button className="activity-action">{activity.action}</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Quick Actions */}
-      {featuredCards.length > 0 && (
-        <div className="featured-section">
-          <h2 className="section-title">Quick Actions</h2>
-          <div className="featured-cards-grid">
-            {featuredCards.map((card, index) => (
-              <div key={index} className="featured-card">
-                <div className="card-icon">{card.icon}</div>
-                <h3 className="card-title">{card.title}</h3>
-                <p className="card-description">{card.description}</p>
-                <button 
-                  className="card-action"
-                  onClick={() => setViewMode('search')}
-                >
-                  {card.action}
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Nearby Popular Spots */}
-      {nearbySpots.length > 0 && (
-        <div className="nearby-section">
-          <h2 className="section-title">Popular Spots</h2>
-          <div className="places-grid">
-            {nearbySpots.map((spot, index) => (
-              <div key={index} className="place-card">
-                <div className="place-content">
-                  <h3 className="place-name">{spot.place_name}</h3>
-                  <p className="place-location">
-                    <FaMapMarkerAlt className="location-icon" />
-                    {spot.city_name}
-                  </p>
-                  <span className="place-category">{spot.category}</span>
-                </div>
-                <button 
-                  className="add-to-calendar-btn"
-                  onClick={() => setSelectedPlace(spot)}
-                >
-                  <FaCalendarPlus />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Local Events */}
-      {localEvents.length > 0 && (
-        <div className="events-section">
-          <h2 className="section-title">Local Events</h2>
-          <div className="events-grid">
-            {localEvents.map((event, index) => (
-              <div key={index} className="event-card">
-                <div className="event-content">
-                  <h3 className="event-title">{event.title}</h3>
-                  <p className="event-date">{event.date}</p>
-                  <p className="event-location">
-                    <FaMapMarkerAlt className="location-icon" />
-                    {event.location}
-                  </p>
-                  <span className="event-type">{event.type}</span>
-          </div>
-        </div>
-      ))}
-          </div>
-        </div>
-      )}
     </>
   );
 
   const renderSearchForm = () => (
     <div className="search-page">
-      <div className="search-hero">
-        <div className="search-hero-content">
-          <h1 className="search-title">
-            <span className="search-title-icon">🔍</span>
-            Discover Amazing Places
-          </h1>
-          <p className="search-subtitle">
-            Find restaurants, attractions, hotels, and more across the USA
-          </p>
-        </div>
-      </div>
-
       <div className="search-form-container">
         <div className="search-form-card">
           {/* Place Type Search */}
           <div className="form-section">
             <div className="form-section-header">
-              <div className="form-section-icon">📍</div>
+              <svg className="form-section-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+              </svg>
               <h3>What are you looking for?</h3>
             </div>
             <div className="autocomplete-container">
@@ -738,46 +624,57 @@ const Home = () => {
             </div>
           </div>
 
+          {/* Line Separator */}
+          <div className="form-separator"></div>
+
           {/* Categories Section */}
           <div className="form-section">
-            <div className="form-section-header">
-              <div className="form-section-icon">🏷️</div>
-              <h3>Or Browse by Category</h3>
+            <div className="form-section-header" onClick={() => setShowCategoryDropdown(!showCategoryDropdown)} style={{ cursor: 'pointer' }}>
+              <svg className="form-section-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                <line x1="7" y1="7" x2="7.01" y2="7"></line>
+              </svg>
+              <h3>Category</h3>
+              <svg className="dropdown-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginLeft: 'auto', transform: showCategoryDropdown ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
             </div>
-            <div className="categories-grid modern-categories">
-              {availableCategories.map((category) => (
-                <div
-                  key={category}
-                  className={`category-chip modern-chip ${searchForm.selectedCategories.includes(category) ? 'selected' : ''}`}
-                  onClick={() => handleCategoryToggle(category)}
-                >
-                  <span className="chip-icon">
-                    {category === 'Restaurants' && '🍽️'}
-                    {category === 'Museums' && '🏛️'}
-                    {category === 'Parks & Recreation' && '🌳'}
-                    {category === 'Attractions' && '🎯'}
-                    {category === 'Shopping' && '🛍️'}
-                    {category === 'Hotels' && '🏨'}
-                    {category === 'Nightlife' && '🌃'}
-                    {category === 'Sports & Entertainment' && '⚽'}
-                    {category === 'Wellness' && '🧘'}
-                  </span>
-                  <span className="chip-text">{category}</span>
-                </div>
-              ))}
-            </div>
+            {showCategoryDropdown && (
+              <div className="categories-grid modern-categories">
+                {availableCategories.map((category) => (
+                  <div
+                    key={category}
+                    className={`category-chip modern-chip ${searchForm.selectedCategories.includes(category) ? 'selected' : ''}`}
+                    onClick={() => handleCategoryToggle(category)}
+                  >
+                    <span className="chip-text">{category}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {searchForm.selectedCategories.length > 0 && !searchForm.city && (
               <div className="form-help modern-help">
-                <span className="help-icon">⚠️</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem', flexShrink: 0 }}>
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
                 When using categories, please select a city below
               </div>
             )}
           </div>
 
+          {/* Line Separator */}
+          <div className="form-separator"></div>
+
           {/* Location Section */}
           <div className="form-section">
             <div className="form-section-header">
-              <div className="form-section-icon">🌍</div>
+              <svg className="form-section-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
               <h3>Where?</h3>
             </div>
             
@@ -835,7 +732,11 @@ const Home = () => {
             </div>
 
             <div className="form-help modern-help">
-              <span className="help-icon">💡</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem', flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
               {searchForm.selectedCategories.length > 0 ? 
                 "City is required when using categories" : 
                 "Location is optional - search nationwide or in specific areas"}
@@ -963,39 +864,57 @@ const Home = () => {
   return (
     <Layout>
       <div className="home-page">
-        <div className="hero-section">
-          <div className="hero-content">
-            <h1 className="hero-title">Discover Remarkable Places</h1>
-            <p className="hero-subtitle">Find the perfect spots for your next adventure with friends</p>
-            
-            {viewMode === 'homepage' && (
+        {viewMode === 'homepage' && (
+          <div className="hero-section">
+            <div className="hero-content">
+              <h1 className="hero-title">{user ? 'Discover Remarkable Places' : 'Plan your next adventure'}</h1>
+              <p className="hero-subtitle">{user ? 'Find the perfect spots for your next adventure with friends' : 'Organize trips, collaborate with friends, and keep all your travel plans in one place'}</p>
+              
               <div className="hero-actions">
-            <button 
-                  className="hero-search-button"
-                  onClick={() => {
-                    setViewMode('search');
-                    // Small delay to ensure the search form renders before scrolling
-                    setTimeout(scrollToSearch, 100);
-                  }}
-            >
-                  <FaSearch className="button-icon" />
-                  Start Exploring
-            </button>
-                <button className="hero-secondary-button">
-                  Learn More
-            </button>
-          </div>
-        )}
-          </div>
-          <div className="hero-visual">
-            <div className="floating-cards">
-              <div className="floating-card card-1">🏛️</div>
-              <div className="floating-card card-2">🍽️</div>
-              <div className="floating-card card-3">🏔️</div>
-              <div className="floating-card card-4">🎭</div>
+                {user ? (
+                  <>
+                    <button 
+                      className="hero-search-button"
+                      onClick={() => {
+                        setViewMode('search');
+                        setTimeout(scrollToSearch, 100);
+                      }}
+                    >
+                      <FaSearch className="button-icon" />
+                      Start Exploring
+                    </button>
+                    <button className="hero-secondary-button">
+                      Learn More
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button 
+                      className="hero-search-button"
+                      onClick={() => navigate('/register')}
+                    >
+                      Get Started
+                    </button>
+                    <button 
+                      className="hero-secondary-button"
+                      onClick={() => navigate('/login')}
+                    >
+                      Sign In
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="hero-visual">
+              <div className="floating-cards">
+                <div className="floating-card card-1">🏛️</div>
+                <div className="floating-card card-2">🍽️</div>
+                <div className="floating-card card-3">🏔️</div>
+                <div className="floating-card card-4">🎭</div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <div className="places-container" ref={searchSectionRef}>
           {console.log('🔍 Main render - viewMode:', viewMode, 'searchResults.length:', searchResults.length)}

@@ -41,27 +41,27 @@ def register():
     
     if not all([first_name, last_name, username, email, password]):
         return jsonify({"error": "All fields are required"}), 400
-    
+
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor()
         
         # Check if username or email already exists
-        cursor.execute("SELECT * FROM user WHERE username = %s OR email = %s", (username, email))
+        cursor.execute("SELECT * FROM users WHERE username = %s OR email = %s", (username, email))
         if cursor.fetchone():
             return jsonify({"error": "Username or email already exists"}), 409
         
         # Insert new user
         cursor.execute("""
-            INSERT INTO user (first_name, last_name, username, email, password)
+            INSERT INTO users (first_name, last_name, username, email, password)
             VALUES (%s, %s, %s, %s, %s)
         """, (first_name, last_name, username, email, password))
         
         conn.commit()
         
         # Get the created user
-        cursor.execute("SELECT user_id, first_name, last_name, username, email FROM user WHERE username = %s", (username,))
+        cursor.execute("SELECT user_id, first_name, last_name, username, email FROM users WHERE username = %s", (username,))
         user = cursor.fetchone()
         
         return jsonify({
@@ -91,13 +91,13 @@ def login():
     
     if not username or not password:
         return jsonify({"error": "Username and password are required"}), 400
-    
+
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor(dictionary=True)
         
-        cursor.execute("SELECT user_id, first_name, last_name, username, email FROM user WHERE username = %s AND password = %s", 
+        cursor.execute("SELECT user_id, first_name, last_name, username, email FROM users WHERE username = %s AND password = %s", 
                       (username, password))
         user = cursor.fetchone()
         
@@ -134,7 +134,7 @@ def search_users():
         # Search for users by username, excluding current user
         cursor.execute("""
             SELECT user_id, first_name, last_name, username 
-            FROM user 
+            FROM users
             WHERE (username LIKE %s OR first_name LIKE %s OR last_name LIKE %s)
             AND user_id != %s
             LIMIT 10
@@ -145,13 +145,13 @@ def search_users():
         # For each user, check if already friends or pending request
         for user in users:
             cursor.execute("""
-                SELECT status FROM friendship 
+                SELECT status FROM friends 
                 WHERE (user_id = %s AND friend_id = %s) 
                 OR (user_id = %s AND friend_id = %s)
             """, (current_user_id, user['user_id'], user['user_id'], current_user_id))
             
-            friendship = cursor.fetchone()
-            user['friendship_status'] = friendship['status'] if friendship else None
+            friends = cursor.fetchone()
+            user['friends_status'] = friends['status'] if friends else None
         
         return jsonify(users), 200
         
@@ -171,15 +171,15 @@ def send_friend_request():
     
     if not user_id or not friend_id:
         return jsonify({"error": "user_id and friend_id are required"}), 400
-    
+
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor()
         
-        # Check if friendship already exists
+        # Check if friends already exists
         cursor.execute("""
-            SELECT * FROM friendship 
+            SELECT * FROM friends 
             WHERE (user_id = %s AND friend_id = %s) 
             OR (user_id = %s AND friend_id = %s)
         """, (user_id, friend_id, friend_id, user_id))
@@ -189,7 +189,7 @@ def send_friend_request():
         
         # Insert friend request
         cursor.execute("""
-            INSERT INTO friendship (user_id, friend_id, status)
+            INSERT INTO friends (user_id, friend_id, status)
             VALUES (%s, %s, 'pending')
         """, (user_id, friend_id))
         
@@ -214,14 +214,14 @@ def get_friend_requests(user_id):
         # Get pending friend requests received by this user
         cursor.execute("""
             SELECT f.id, f.user_id, u.first_name, u.last_name, u.username
-            FROM friendship f
-            JOIN user u ON f.user_id = u.user_id
+            FROM friends f
+            JOIN users u ON f.user_id = u.user_id
             WHERE f.friend_id = %s AND f.status = 'pending'
         """, (user_id,))
         
         requests = cursor.fetchall()
         return jsonify(requests), 200
-        
+
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
         return jsonify({"error": "Database error occurred"}), 500
@@ -237,16 +237,16 @@ def accept_friend_request(request_id):
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor()
         
-        # Update friendship status to accepted
+        # Update friends status to accepted
         cursor.execute("""
-            UPDATE friendship 
+            UPDATE friends 
             SET status = 'accepted'
             WHERE id = %s
         """, (request_id,))
         
         conn.commit()
         return jsonify({"message": "Friend request accepted"}), 200
-        
+
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
         return jsonify({"error": "Database error occurred"}), 500
@@ -261,13 +261,13 @@ def reject_friend_request(request_id):
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor()
-        
+
         # Delete the friend request
-        cursor.execute("DELETE FROM friendship WHERE id = %s", (request_id,))
+        cursor.execute("DELETE FROM friends WHERE id = %s", (request_id,))
         
         conn.commit()
         return jsonify({"message": "Friend request rejected"}), 200
-        
+
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
         return jsonify({"error": "Database error occurred"}), 500
@@ -283,8 +283,8 @@ def get_friends(user_id):
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor(dictionary=True)
-        
-        # Get all accepted friendships for this user
+
+        # Get all accepted friendss for this user
         cursor.execute("""
             SELECT 
                 CASE 
@@ -303,9 +303,9 @@ def get_friends(user_id):
                     WHEN f.user_id = %s THEN u2.username
                     ELSE u1.username
                 END as username
-            FROM friendship f
-            JOIN user u1 ON f.user_id = u1.user_id
-            JOIN user u2 ON f.friend_id = u2.user_id
+            FROM friends f
+            JOIN users u1 ON f.user_id = u1.user_id
+            JOIN users u2 ON f.friend_id = u2.user_id
             WHERE (f.user_id = %s OR f.friend_id = %s) AND f.status = 'accepted'
         """, (user_id, user_id, user_id, user_id, user_id, user_id))
         
@@ -322,31 +322,39 @@ def get_friends(user_id):
 
 # Chat/Group routes
 @app.route('/api/groups/<int:user_id>', methods=['GET'])
-def get_groups(user_id):
+@app.route('/api/chat_groups/<int:user_id>', methods=['GET'])
+def get_chat_groups(user_id):
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor(dictionary=True)
         
-        # Get all groups user is part of
+        # First get the user's username
+        cursor.execute("SELECT username FROM users WHERE user_id = %s", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify([]), 200
+        
+        username = user['username']
+        
+        # Get all groups user is part of or created
         cursor.execute("""
-            SELECT DISTINCT g.group_id, g.group_name, g.created_at
-            FROM user_group ug
-            JOIN `group` g ON ug.group_id = g.group_id
-            WHERE ug.user_id = %s
+            SELECT DISTINCT g.id as group_id, g.name as group_name, g.created_at
+        FROM chat_groups g
+            WHERE g.created_by = %s 
+            OR g.id IN (SELECT group_id FROM group_members WHERE username = %s)
             ORDER BY g.created_at DESC
-        """, (user_id,))
+        """, (username, username))
         
         groups = cursor.fetchall()
         
-        # For each group, get the latest message
+        # For each group, get the latest message and member count
         for group in groups:
             cursor.execute("""
-                SELECT m.message, m.timestamp, u.first_name, u.last_name
-                FROM message m
-                JOIN user u ON m.user_id = u.user_id
+                SELECT m.message, m.created_at as timestamp
+                FROM messages m
                 WHERE m.group_id = %s
-                ORDER BY m.timestamp DESC
+                ORDER BY m.created_at DESC
                 LIMIT 1
             """, (group['group_id'],))
             
@@ -354,60 +362,65 @@ def get_groups(user_id):
             if latest_message:
                 group['latest_message'] = latest_message['message']
                 group['latest_message_time'] = latest_message['timestamp']
-                group['latest_message_sender'] = f"{latest_message['first_name']} {latest_message['last_name']}"
             else:
                 group['latest_message'] = None
                 group['latest_message_time'] = None
-                group['latest_message_sender'] = None
+            
+            # Get member count
+            cursor.execute("""
+                SELECT COUNT(*) as count FROM group_members WHERE group_id = %s
+            """, (group['group_id'],))
+            count_result = cursor.fetchone()
+            group['member_count'] = (count_result['count'] + 1) if count_result else 1  # +1 for creator
         
         return jsonify(groups), 200
         
     except mysql.connector.Error as err:
-        print(f"Database error: {err}")
+        print(f"Database error in get_chat_groups: {err}")
         return jsonify({"error": "Database error occurred"}), 500
     finally:
         if conn and conn.is_connected():
             cursor.close()
             conn.close()
 
-@app.route('/api/groups', methods=['POST'])
-def create_group():
+@app.route('/api/chat_groups', methods=['POST'])
+def create_chat_groups():
     data = request.json
-    group_name = data.get('group_name')
+    chat_groups_name = data.get('chat_groups_name')
     user_id = data.get('user_id')
     member_ids = data.get('member_ids', [])
     
-    if not group_name or not user_id:
-        return jsonify({"error": "group_name and user_id are required"}), 400
+    if not chat_groups_name or not user_id:
+        return jsonify({"error": "chat_groups_name and user_id are required"}), 400
     
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor()
-        
-        # Create group
+
+        # Create chat_groups
         cursor.execute("""
-            INSERT INTO `group` (group_name, created_by)
+            INSERT INTO `chat_groups` (chat_groups_name, created_by)
             VALUES (%s, %s)
-        """, (group_name, user_id))
+        """, (chat_groups_name, user_id))
         
-        group_id = cursor.lastrowid
+        chat_groups_id = cursor.lastrowid
         
-        # Add creator to group
+        # Add creator to chat_groups
         cursor.execute("""
-            INSERT INTO user_group (user_id, group_id)
+            INSERT INTO user_chat_groups (user_id, chat_groups_id)
             VALUES (%s, %s)
-        """, (user_id, group_id))
+        """, (user_id, chat_groups_id))
         
         # Add other members
         for member_id in member_ids:
             cursor.execute("""
-                INSERT INTO user_group (user_id, group_id)
+                INSERT INTO user_chat_groups (user_id, chat_groups_id)
                 VALUES (%s, %s)
-            """, (member_id, group_id))
-        
+            """, (member_id, chat_groups_id))
+
         conn.commit()
-        return jsonify({"message": "Group created", "group_id": group_id}), 201
+        return jsonify({"message": "Group created", "chat_groups_id": chat_groups_id}), 201
         
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
@@ -417,8 +430,91 @@ def create_group():
             cursor.close()
             conn.close()
 
-@app.route('/api/groups/<int:group_id>/messages', methods=['GET'])
-def get_messages(group_id):
+@app.route('/api/trips/create', methods=['POST'])
+def create_trip():
+    """Create a trip (chat_groups + calendar events for locations)"""
+    data = request.json
+    user_id = data.get('user_id')
+    trip_name = data.get('trip_name')
+    description = data.get('description', '')
+    member_ids = data.get('member_ids', [])
+    locations = data.get('locations', [])
+    
+    if not user_id or not trip_name:
+        return jsonify({"error": "user_id and trip_name are required"}), 400
+    
+    if not locations:
+        return jsonify({"error": "At least one location is required"}), 400
+        
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        
+        # Create chat_groups for the trip
+        cursor.execute("""
+            INSERT INTO `chat_groups` (chat_groups_name, created_by)
+            VALUES (%s, %s)
+        """, (trip_name, user_id))
+        
+        chat_groups_id = cursor.lastrowid
+        
+        # Add creator to chat_groups
+        cursor.execute("""
+            INSERT INTO user_chat_groups (user_id, chat_groups_id)
+            VALUES (%s, %s)
+        """, (user_id, chat_groups_id))
+        
+        # Add other members if specified
+        for member_id in member_ids:
+            try:
+                cursor.execute("""
+                    INSERT INTO user_chat_groups (user_id, chat_groups_id)
+                    VALUES (%s, %s)
+                """, (member_id, chat_groups_id))
+            except mysql.connector.Error:
+                # Skip if user is already in chat_groups
+                pass
+        
+        # Create calendar events for each location
+        for location in locations:
+            city = location.get('city')
+            state = location.get('state')
+            start_date = location.get('startDate')
+            end_date = location.get('endDate') or start_date
+            
+            if not city or not start_date:
+                continue
+            
+            location_str = f"{city}, {state}" if state else city
+            event_title = f"Visit {city}"
+            
+            cursor.execute("""
+                INSERT INTO calendar_events 
+                (title, description, start_date, end_date, location, chat_groups_id, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (event_title, description, start_date, end_date, location_str, chat_groups_id, user_id))
+        
+        conn.commit()
+        
+        return jsonify({
+            "message": "Trip created successfully",
+            "chat_groups_id": chat_groups_id,
+            "trip_name": trip_name
+        }), 201
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        if conn:
+            conn.rollback()
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/chat_groups/<int:chat_groups_id>/messages', methods=['GET'])
+def get_messages(chat_groups_id):
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
@@ -427,11 +523,11 @@ def get_messages(group_id):
         cursor.execute("""
             SELECT m.message_id, m.message, m.timestamp, m.user_id,
                    u.first_name, u.last_name, u.username
-            FROM message m
-            JOIN user u ON m.user_id = u.user_id
-            WHERE m.group_id = %s
+            FROM messagess m
+            JOIN users u ON m.user_id = u.user_id
+            WHERE m.chat_groups_id = %s
             ORDER BY m.timestamp ASC
-        """, (group_id,))
+        """, (chat_groups_id,))
         
         messages = cursor.fetchall()
         return jsonify(messages), 200
@@ -444,38 +540,38 @@ def get_messages(group_id):
             cursor.close()
             conn.close()
 
-@app.route('/api/groups/<int:group_id>/messages', methods=['POST'])
-def send_message(group_id):
+@app.route('/api/chat_groups/<int:chat_groups_id>/messages', methods=['POST'])
+def send_message(chat_groups_id):
     data = request.json
     user_id = data.get('user_id')
-    message = data.get('message')
+    messages = data.get('message')
     
     if not user_id or not message:
-        return jsonify({"error": "user_id and message are required"}), 400
-    
+        return jsonify({"error": "user_id and messages are required"}), 400
+        
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor()
         
         cursor.execute("""
-            INSERT INTO message (group_id, user_id, message)
+            INSERT INTO messagess (chat_groups_id, user_id, message)
             VALUES (%s, %s, %s)
-        """, (group_id, user_id, message))
+        """, (chat_groups_id, user_id, message))
         
         conn.commit()
         
-        # Get the created message with user details
+        # Get the created messages with user details
         cursor = conn.cursor(dictionary=True)
         cursor.execute("""
             SELECT m.message_id, m.message, m.timestamp, m.user_id,
                    u.first_name, u.last_name, u.username
-            FROM message m
-            JOIN user u ON m.user_id = u.user_id
+            FROM messagess m
+            JOIN users u ON m.user_id = u.user_id
             WHERE m.message_id = %s
         """, (cursor.lastrowid,))
         
-        new_message = cursor.fetchone()
+        new_messages = cursor.fetchone()
         return jsonify(new_message), 201
         
     except mysql.connector.Error as err:
@@ -486,8 +582,8 @@ def send_message(group_id):
             cursor.close()
             conn.close()
 
-@app.route('/api/groups/<int:group_id>/members', methods=['GET'])
-def get_group_members(group_id):
+@app.route('/api/chat_groups/<int:chat_groups_id>/members', methods=['GET'])
+def get_chat_groups_members(chat_groups_id):
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
@@ -495,10 +591,10 @@ def get_group_members(group_id):
         
         cursor.execute("""
             SELECT u.user_id, u.first_name, u.last_name, u.username
-            FROM user_group ug
-            JOIN user u ON ug.user_id = u.user_id
-            WHERE ug.group_id = %s
-        """, (group_id,))
+            FROM user_chat_groups ug
+            JOIN users u ON ug.user_id = u.user_id
+            WHERE ug.chat_groups_id = %s
+        """, (chat_groups_id,))
         
         members = cursor.fetchall()
         return jsonify(members), 200
@@ -754,7 +850,7 @@ def search_places_in_city():
                 except Exception as e:
                     print(f"Error fetching details for {place_id}: {e}")
                     continue
-                    
+            
             except Exception as e:
                 print(f"Error processing place: {e}")
                 continue
@@ -915,7 +1011,7 @@ def advanced_search():
                         }
                         formatted_places.append(formatted_place)
                         print(f"  Added place: {formatted_place['place_name']}")
-                        
+                
                 except Exception as e:
                     print(f"Error fetching place details for {place_id}: {e}")
                     continue
@@ -928,7 +1024,7 @@ def advanced_search():
             'places': formatted_places,
             'total': len(formatted_places)
         }), 200
-        
+
     except Exception as e:
         print("Error in advanced search:", e)
         return jsonify({"error": str(e)}), 500
@@ -1016,7 +1112,7 @@ def search_nearby():
                         'lng': result['geometry']['location']['lng']
                     }
                     formatted_places.append(formatted_place)
-                    
+            
             except Exception as e:
                 print(f"Error processing place: {e}")
                 continue
@@ -1230,7 +1326,7 @@ def get_place_details(place_id):
 @app.route('/api/calendar/events', methods=['GET'])
 def get_calendar_events():
     user_id = request.args.get('user_id')
-    group_id = request.args.get('group_id')
+    chat_groups_id = request.args.get('chat_groups_id')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
@@ -1253,19 +1349,19 @@ def get_calendar_events():
             ce.end_date,
             ce.location,
             ce.place_id,
-            ce.group_id,
-            g.group_name,
+            ce.chat_groups_id,
+            g.chat_groups_name,
             ce.created_by
         FROM calendar_events ce
-        LEFT JOIN `group` g ON ce.group_id = g.group_id
+        LEFT JOIN `chat_groups` g ON ce.chat_groups_id = g.chat_groups_id
         WHERE ce.created_by = %s
         """
         
         params = [user_id]
         
-        if group_id:
-            query += " AND ce.group_id = %s"
-            params.append(group_id)
+        if chat_groups_id:
+            query += " AND ce.chat_groups_id = %s"
+            params.append(chat_groups_id)
         
         if start_date and end_date:
             query += " AND ce.start_date >= %s AND ce.end_date <= %s"
@@ -1297,13 +1393,13 @@ def get_calendar_events():
                         event['city_name'] = extract_city_from_address(place_data.get('formatted_address', ''))
                 except Exception as e:
                     print(f"Error fetching place details for {event['place_id']}: {e}")
-                    event['place_name'] = ''
-                    event['place_address'] = ''
-                    event['place_category'] = ''
-                    event['city_name'] = ''
+                event['place_name'] = ''
+                event['place_address'] = ''
+                event['place_category'] = ''
+                event['city_name'] = ''
         
         return jsonify(events), 200
-        
+    
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
         return jsonify({"error": "Database error occurred"}), 500
@@ -1326,7 +1422,7 @@ def create_calendar_event():
     description = data.get('description', '')
     location = data.get('location', '')
     place_id = data.get('place_id')  # Google Places place_id
-    group_id = data.get('group_id')
+    chat_groups_id = data.get('chat_groups_id')
     
     if not all([title, start_date, end_date, created_by]):
         return jsonify({"error": "Title, start_date, end_date, and created_by are required"}), 400
@@ -1337,10 +1433,10 @@ def create_calendar_event():
         cursor = conn.cursor()
         
         cursor.execute("""
-            INSERT INTO calendar_events 
-            (title, description, start_date, end_date, location, place_id, group_id, created_by)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """, (title, description, start_date, end_date, location, place_id, group_id, created_by))
+        INSERT INTO calendar_events 
+            (title, description, start_date, end_date, location, place_id, chat_groups_id, created_by)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (title, description, start_date, end_date, location, place_id, chat_groups_id, created_by))
         
         event_id = cursor.lastrowid
         conn.commit()
@@ -1349,7 +1445,7 @@ def create_calendar_event():
             "message": "Event created successfully",
             "event_id": event_id
         }), 201
-        
+    
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
         return jsonify({"error": "Database error occurred"}), 500
@@ -1409,9 +1505,9 @@ def update_calendar_event(event_id):
             update_fields.append("place_id = %s")
             params.append(data['place_id'])
         
-        if 'group_id' in data:
-            update_fields.append("group_id = %s")
-            params.append(data['group_id'])
+        if 'chat_groups_id' in data:
+            update_fields.append("chat_groups_id = %s")
+            params.append(data['chat_groups_id'])
         
         if not update_fields:
             return jsonify({"error": "No fields to update"}), 400
@@ -1423,7 +1519,7 @@ def update_calendar_event(event_id):
         conn.commit()
         
         return jsonify({"message": "Event updated successfully"}), 200
-        
+    
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
         return jsonify({"error": "Database error occurred"}), 500
@@ -1458,7 +1554,7 @@ def delete_calendar_event(event_id):
         conn.commit()
         
         return jsonify({"message": "Event deleted successfully"}), 200
-        
+    
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
         return jsonify({"error": "Database error occurred"}), 500
@@ -1467,25 +1563,25 @@ def delete_calendar_event(event_id):
             cursor.close()
             conn.close()
 
-@app.route('/api/calendar/groups/<int:user_id>', methods=['GET'])
-def get_user_groups(user_id):
-    """Get all groups that a user is part of for calendar selection"""
+@app.route('/api/calendar/chat_groups/<int:user_id>', methods=['GET'])
+def get_user_chat_groups(user_id):
+    """Get all chat_groups that a user is part of for calendar selection"""
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor(dictionary=True)
         
         cursor.execute("""
-            SELECT DISTINCT g.group_id, g.group_name
-            FROM user_group ug
-            JOIN `group` g ON ug.group_id = g.group_id
+            SELECT DISTINCT g.chat_groups_id, g.chat_groups_name
+            FROM user_chat_groups ug
+            JOIN `chat_groups` g ON ug.chat_groups_id = g.chat_groups_id
             WHERE ug.user_id = %s
-            ORDER BY g.group_name ASC
+            ORDER BY g.chat_groups_name ASC
         """, (user_id,))
         
-        groups = cursor.fetchall()
-        return jsonify(groups), 200
-        
+        chat_groups = cursor.fetchall()
+        return jsonify(chat_groups), 200
+    
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
         return jsonify({"error": "Database error occurred"}), 500
@@ -1505,7 +1601,7 @@ def get_welcome_data(user_id):
         
         # Get user info
         cursor.execute("""
-            SELECT first_name, last_name FROM user WHERE user_id = %s
+            SELECT first_name, last_name FROM users WHERE user_id = %s
         """, (user_id,))
         user = cursor.fetchone()
         
@@ -1519,19 +1615,19 @@ def get_welcome_data(user_id):
         """, (user_id,))
         upcoming_events = cursor.fetchone()['count']
         
-        # Get active groups count
+        # Get active chat_groups count
         cursor.execute("""
-            SELECT COUNT(DISTINCT group_id) as count FROM user_group 
+            SELECT COUNT(DISTINCT chat_groups_id) as count FROM user_chat_groups 
             WHERE user_id = %s
         """, (user_id,))
-        active_groups = cursor.fetchone()['count']
+        active_chat_groups = cursor.fetchone()['count']
         
         # Get recent activity (latest messages and events)
         cursor.execute("""
-            SELECT 'message' as type, m.message as content, m.timestamp, g.group_name as context
-            FROM message m
-            JOIN `group` g ON m.group_id = g.group_id
-            JOIN user_group ug ON g.group_id = ug.group_id
+            SELECT 'message' as type, m.messages as content, m.timestamp, g.chat_groups_name as context
+            FROM messagess m
+            JOIN `chat_groups` g ON m.chat_groups_id = g.chat_groups_id
+            JOIN user_chat_groups ug ON g.chat_groups_id = ug.chat_groups_id
             WHERE ug.user_id = %s
             ORDER BY m.timestamp DESC
             LIMIT 5
@@ -1542,7 +1638,7 @@ def get_welcome_data(user_id):
             'user': user,
             'stats': {
                 'upcoming_events': upcoming_events,
-                'active_groups': active_groups
+                'active_chat_groups': active_chat_groups
             },
             'recent_activity': recent_activity
         }

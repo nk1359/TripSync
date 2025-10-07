@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { AuthContext } from './AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   FaUser, 
   FaSignOutAlt, 
@@ -20,6 +20,7 @@ import './styles/Layout.css';
 
 const Layout = ({ children }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useContext(AuthContext); 
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -249,24 +250,30 @@ const Layout = ({ children }) => {
         <div className="top-bar">
           <div className="left-area">
             <div className="app-logo">
-              <img src="/tripsync_logo.PNG" alt="TripSync" className="logo-image" />
+              <img src="/Trip Sync.png" alt="TripSync" className="logo-image" />
             </div>
+            <div className="logo-separator"></div>
           </div>
           
           <div className="center-area">
             <nav className="top-nav">
               <ul className="nav-list">
-                {navItems.map((item, index) => (
-                  <li key={index} className="nav-item">
-                    <div 
-                      onClick={() => handleNavigation(item.path)} 
-                      className="nav-link"
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <span className="nav-text">{item.text}</span>
-                    </div>
-                  </li>
-                ))}
+                {navItems.map((item, index) => {
+                  const isActive = location.pathname === item.path || 
+                    (item.path === '/home' && location.pathname === '/');
+                  return (
+                    <li key={index} className="nav-item">
+                      <div 
+                        onClick={() => handleNavigation(item.path)} 
+                        className={`nav-link ${isActive ? 'active' : ''}`}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <span className="nav-text">{item.text}</span>
+                      </div>
+                      {index < navItems.length - 1 && <div className="nav-separator"></div>}
+                    </li>
+                  );
+                })}
               </ul>
             </nav>
           </div>

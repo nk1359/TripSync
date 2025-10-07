@@ -1,9 +1,20 @@
-/* Global Minimalist Dark Theme */
+/* Global Minimalist Dark Theme with Stormy Morning Palette */
 :root {
-  /* Primary Colors */
-  --primary-color: #ffffff;
-  --primary-dark: #f3f4f6;
-  --primary-light: #d1d5db;
+  /* Stormy Morning Color Palette - Exact Colors */
+  --stormy-blue: #88BDF2;          /* Swatch 3 - Vibrant blue */
+  --stormy-light: #BDDDFC;         /* Swatch 2 - Light blue */
+  --stormy-medium: #6A89A7;        /* Swatch 1 - Medium blue-gray */
+  --stormy-dark: #384959;          /* Swatch 4 - Dark blue-gray */
+  
+  /* Semantic color assignments */
+  --primary-color: var(--stormy-blue);     /* Primary actions */
+  --secondary-color: var(--stormy-light);  /* Hover states */
+  --supporting-dark: var(--stormy-medium); /* Supporting elements */
+  --supporting-darker: var(--stormy-dark); /* Deep elements */
+  
+  /* Legacy primary colors for compatibility */
+  --primary-dark: var(--stormy-medium);
+  --primary-light: var(--stormy-light);
   
   /* Dark Backgrounds */
   --bg-color: #18181b;

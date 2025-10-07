@@ -1,0 +1,255 @@
+/* ===== Date Range Picker - Minimalist Dark Theme ===== */
+.date-range-picker {
+  position: relative;
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.date-picker-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: #ffffff;
+  margin-bottom: 0.5rem;
+}
+
+.date-inputs-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.date-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.date-input-group label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: #ffffff;
+  margin-bottom: 0.25rem;
+}
+
+.date-display-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1.5px solid #3f3f46;
+  border-radius: 6px;
+  background: #18181b;
+  color: #ffffff;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 48px;
+  font-family: inherit;
+}
+
+.date-display-input:hover {
+  border-color: #52525b;
+  background: #1f1f23;
+}
+
+.date-display-input:focus {
+  outline: none;
+  border-color: #ffffff;
+  background: #1f1f23;
+}
+
+/* ===== Calendar Dropdown ===== */
+.calendar-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
+  background: #1f1f23;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  padding: 1.5rem;
+  z-index: 10000;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+}
+
+.calendar-close-btn {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: transparent;
+  border: 1px solid var(--supporting-dark);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--supporting-dark);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 10;
+  margin-bottom: 1rem;
+}
+
+.calendar-close-btn:hover {
+  background: rgba(189, 221, 252, 0.2);
+  border-color: var(--stormy-blue);
+  color: var(--stormy-blue);
+}
+
+.calendar-months-container {
+  margin-top: 3rem;
+}
+
+.calendar-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.calendar-nav button {
+  background: transparent;
+  border: 1px solid var(--supporting-dark);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--supporting-dark);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.calendar-nav button:hover {
+  background: rgba(189, 221, 252, 0.2);
+  border-color: var(--stormy-blue);
+  color: var(--stormy-blue);
+}
+
+.calendar-months-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.calendar-month-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.calendar-month-view {
+  min-width: 0;
+}
+
+.calendar-month-header {
+  font-size: 1rem;
+  font-weight: 500;
+  color: #ffffff;
+  text-align: center;
+  flex: 1;
+  margin: 0;
+}
+
+.calendar-day-headers {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.calendar-day-header {
+  text-align: center;
+  font-size: 0.75rem;
+  color: #a1a1aa;
+  font-weight: 400;
+  padding: 0.5rem 0;
+}
+
+.calendar-days-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.25rem;
+}
+
+.calendar-day-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  color: #ffffff;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.calendar-day-cell.empty {
+  cursor: default;
+  color: transparent;
+}
+
+.calendar-day-cell:not(.empty):hover {
+  background: #3f3f46;
+}
+
+.calendar-day-cell.selected {
+  background: #ffffff;
+  color: #000000;
+  font-weight: 500;
+  z-index: 2;
+  position: relative;
+}
+
+.calendar-day-cell.selected:hover {
+  background: #cccccc;
+}
+
+.calendar-day-cell.in-range {
+  background: #384959;
+  border-radius: 50%;
+  color: #ffffff;
+}
+
+.calendar-day-cell.in-range:hover {
+  background: #2a2e38;
+}
+
+/* Circular edges for range start and end */
+.calendar-day-cell.range-start {
+  border-radius: 50%;
+  background: #ffffff;
+  color: #000000;
+  font-weight: 500;
+}
+
+.calendar-day-cell.range-start:hover {
+  background: #cccccc;
+}
+
+.calendar-day-cell.range-end {
+  border-radius: 50%;
+  background: #ffffff;
+  color: #000000;
+  font-weight: 500;
+}
+
+.calendar-day-cell.range-end:hover {
+  background: #cccccc;
+}
+
+@media (max-width: 768px) {
+  .calendar-months-container {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .date-inputs-row {
+    grid-template-columns: 1fr;
+  }
+}
+

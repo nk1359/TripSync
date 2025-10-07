@@ -49,7 +49,7 @@ function Login() {
       
       const data = await response.json();
       
-      if (data.success) {
+      if (response.ok && data.user) {
         localStorage.setItem('user', JSON.stringify(data.user));
         setUser(data.user);
         navigate('/home');
@@ -104,7 +104,7 @@ function Login() {
     <div className="auth-page">
       <div className="auth-container">
         <div className="auth-logo">
-          <img src="/tripsync_logo.PNG" alt="TripSync" className="auth-logo-image" />
+          <img src="/trip sync - login.png" alt="TripSync" className="auth-logo-image" />
         </div>
         
         <div className="auth-tabs">

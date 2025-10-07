@@ -37,7 +37,7 @@
   
   /* Layout */
   --sidebar-width: 320px;
-  --topbar-height: 70px;
+  --topbar-height: 80px;
   --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
   --transition-fast: 0.2s ease;
@@ -187,16 +187,17 @@ body {
 
 /* ===== Top Bar ===== */
 .top-bar {
-  height: 64px;
+  height: 80px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 1.5rem;
-  background-color: #000000;
+  padding: 0 2rem;
+  background-color: #27272a;
   position: sticky;
   top: 0;
   z-index: 900;
-  border-bottom: 1px solid var(--border-gray-900);
+  border-top: 1px solid #3f3f46;
+  border-bottom: 1px solid #3f3f46;
 }
 
 .left-area, .center-area, .right-area {
@@ -215,9 +216,16 @@ body {
 }
 
 .logo-image {
-  height: 48px;
+  height: 36px;
   width: auto;
   display: block;
+}
+
+.logo-separator {
+  width: 1px;
+  height: 40px;
+  background: #3f3f46;
+  margin-left: 1rem;
 }
 
 .logo-icon {
@@ -237,8 +245,7 @@ body {
 
 .top-nav .nav-list {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  align-items: left;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -246,34 +253,43 @@ body {
 
 .top-nav .nav-item {
   margin: 0;
+  display: flex;
+  align-items: center;
+}
+
+.nav-separator {
+  width: 1px;
+  height: 20px;
+  background: #3f3f46;
+  margin: 0 0.75rem;
 }
 
 .top-nav .nav-link {
   display: flex;
   align-items: center;
   padding: 0.5rem 1rem;
-  transition: var(--transition);
-  color: var(--text-gray-500);
+  transition: all 0.2s ease;
+  color: #ffffff;
   text-decoration: none;
   font-weight: 500;
   font-size: 0.875rem;
   position: relative;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
 }
 
-.top-nav .nav-link::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 0;
-  height: 1px;
-  background-color: #ffffff;
-  transition: width 0.3s ease;
+.top-nav .nav-link.active {
+  background: #1f1f23;
+  border: 1px solid #3f3f46;
+  color: #ffffff;
 }
 
-.top-nav .nav-link:hover::after {
-  width: 100%;
+.top-nav .nav-link:hover:not(.active) {
+  background: #3f3f46;
+  color: #ffffff;
 }
+
 
 .top-nav .nav-text {
   font-size: 0.875rem;
@@ -282,7 +298,8 @@ body {
 
 .center-area {
   flex: 1;
-  justify-content: center;
+  justify-content: flex-start;
+  margin-left: 0.5rem;
 }
 
 .app-title {
@@ -339,12 +356,13 @@ body {
 }
 
 .get-started-btn {
-  background: #ffffff;
+  background: #88BDF2;
   color: #000000;
 }
 
 .get-started-btn:hover {
-  background: #d1d5db;
+  background: #6eaadb;
+  color: #000000;
 }
 
 /* Notification Bell */

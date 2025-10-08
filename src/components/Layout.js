@@ -104,7 +104,7 @@ const Layout = ({ children }) => {
   // Navigation items - show different items based on auth status
   const navItems = user ? [
     { text: "Home", path: "/home" },
-    { text: "Planner", path: "/calendar" },
+    { text: "Planner", path: "/planner" },
     { text: "Chat", path: "/chats" }
   ] : [
     { text: "Home", path: "/" }

@@ -6,7 +6,7 @@ import Register from './components/Register';
 import Home from './components/Home';
 import Chats from './components/Chats';
 import ChatRoom from './components/ChatRoom'; 
-import Calendar from './components/Calendar';
+import Planner from './components/Planner';
 
 function App() {
   const { user, loading } = useContext(AuthContext);
@@ -29,7 +29,7 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/chats" element={user ? <Chats /> : <Navigate to="/" replace />} />
         <Route path="/chats/:groupId" element={user ? <ChatRoom /> : <Navigate to="/" replace />} />
-        <Route path="/calendar" element={user ? <Calendar /> : <Navigate to="/" replace />} />
+        <Route path="/planner" element={user ? <Planner /> : <Navigate to="/" replace />} />
         
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

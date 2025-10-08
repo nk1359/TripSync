@@ -15,6 +15,10 @@ const Home = () => {
   const [selectedPlaceForModal, setSelectedPlaceForModal] = useState(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [placeImages, setPlaceImages] = useState([]);
+  const [plannerContext, setPlannerContext] = useState(null);
+  const [showTripSelector, setShowTripSelector] = useState(false);
+  const [selectedTripForPlanner, setSelectedTripForPlanner] = useState(null);
+  const [selectedDayForPlanner, setSelectedDayForPlanner] = useState('');
   
   const [nearbySpots, setNearbySpots] = useState([]);
   const [localEvents, setLocalEvents] = useState([]);
@@ -84,7 +88,7 @@ const Home = () => {
     // Load welcome data first (instant) - only for logged-in users
     if (user) {
       loadWelcomeData();
-      fetchTrips(); // Load user's trips
+      await fetchTrips(); // Wait for trips to load
     }
     
     // Load other sections with delays to avoid overwhelming
@@ -96,28 +100,55 @@ const Home = () => {
       setTimeout(() => loadLocalEvents(), 300);
     }
     
-    setLoading(false);
+    // Wait a bit for the staggered loads before hiding loading
+    setTimeout(() => setLoading(false), 400);
   };
 
-  // Handle URL parameters on component mount
+  // Handle URL parameters and planner context on component mount
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
+    const mode = urlParams.get('mode');
+    const fromPlanner = urlParams.get('from') === 'planner';
+    
+    // Check for planner context
+    if (fromPlanner) {
+      const context = sessionStorage.getItem('plannerContext');
+      if (context) {
+        const parsedContext = JSON.parse(context);
+        setPlannerContext(parsedContext);
+        
+        // Try to extract city/state from trip name
+        // Common formats: "NYC Trip", "Paris Adventure", "California Road Trip"
+        const tripName = parsedContext.tripName || '';
+        const nameParts = tripName.split(' ');
+        
+        // Set a default search for the trip location
+        // This is a simple approach - could be enhanced with actual trip location data
+        setSearchForm(prev => ({
+          ...prev,
+          placeType: '',
+          state: '',
+          city: '',
+          zipCode: '',
+          selectedCategories: []
+        }));
+      }
+    }
+    
+    // Check for search parameters
     const placeType = urlParams.get('place_type');
     const state = urlParams.get('state');
     const city = urlParams.get('city');
     
-    if (placeType && (state || city)) {
+    if (mode === 'search' || (placeType && (state || city))) {
       setSearchForm({
-        placeType: placeType,
+        placeType: placeType || '',
         state: state || '',
         city: city || '',
-        zipCode: ''
+        zipCode: '',
+        selectedCategories: []
       });
       setViewMode('search');
-      // Trigger search after a short delay to ensure form is set
-      setTimeout(() => {
-        handleSearch();
-      }, 100);
     }
   }, []);
 
@@ -171,12 +202,135 @@ const Home = () => {
     if (!user) return;
     
     try {
-      const response = await fetch(`http://localhost:5000/api/groups/${user.user_id}`);
+      const response = await fetch(`http://localhost:5000/api/trips/${user.user_id}`);
       const data = await response.json();
-      setTrips(data || []);
+      setTrips(data.trips || []);
     } catch (error) {
       console.error('Error fetching trips:', error);
     }
+  };
+
+  // Delete trip (only for owners)
+  const handleDeleteTrip = async (tripId) => {
+    if (!window.confirm('Are you sure you want to delete this trip? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/trips/${tripId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.user_id })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert('Trip deleted successfully!');
+        fetchTrips(); // Refresh trips list
+      } else {
+        alert(data.error || 'Failed to delete trip');
+      }
+    } catch (error) {
+      console.error('Error deleting trip:', error);
+      alert('Failed to delete trip');
+    }
+  };
+
+  // Open trip/day selector for adding to planner
+  const handleOpenPlannerSelector = (place) => {
+    setSelectedPlaceForModal(place);
+    setShowTripSelector(true);
+    
+    // Pre-select trip and day if from planner
+    if (plannerContext) {
+      const trip = trips.find(t => t.trip_id === plannerContext.tripId);
+      setSelectedTripForPlanner(trip);
+      setSelectedDayForPlanner(plannerContext.selectedDay);
+    }
+  };
+
+  // Add place to planner
+  const handleAddToPlanner = async () => {
+    if (!selectedTripForPlanner || !selectedDayForPlanner) {
+      alert('Please select a trip and date');
+      return;
+    }
+    
+    const itemData = {
+      trip_id: selectedTripForPlanner.trip_id,
+      item_name: selectedPlaceForModal.place_name,
+      item_type: selectedPlaceForModal.category || 'attraction',
+      description: '',
+      location: selectedPlaceForModal.address || selectedPlaceForModal.city_name || '',
+      start_date: selectedDayForPlanner,
+      end_date: selectedDayForPlanner,
+      start_time: null,
+      end_time: null,
+      cost: null,
+      notes: '',
+      created_by: user.user_id,
+      google_place_id: selectedPlaceForModal.place_id
+    };
+    
+    console.log('📝 Adding to planner:', itemData);
+    
+    try {
+      const response = await fetch('http://localhost:5000/api/planner/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(itemData)
+      });
+
+      const data = await response.json();
+      console.log('✅ Add to planner response:', data);
+
+      if (response.ok) {
+        console.log('[HOME] Item added successfully, response:', data);
+        
+        // Store the new item in sessionStorage for optimistic update
+        if (data.item) {
+          console.log('[HOME] Storing new item in sessionStorage:', data.item);
+          sessionStorage.setItem('newPlannerItem', JSON.stringify(data.item));
+          console.log('[HOME] Stored in sessionStorage, value:', sessionStorage.getItem('newPlannerItem'));
+        } else {
+          console.warn('[HOME] No item in response data');
+        }
+        
+        setShowTripSelector(false);
+        setSelectedPlaceForModal(null);
+        
+        // Navigate back to planner if from planner
+        if (plannerContext) {
+          console.log('[HOME] Navigating back to planner with new item');
+          sessionStorage.removeItem('plannerContext');
+          setPlannerContext(null);
+          navigate('/planner');
+        } else {
+          alert(`Added ${selectedPlaceForModal.place_name} to your trip!`);
+        }
+      } else {
+        alert(data.error || 'Failed to add to planner');
+      }
+    } catch (error) {
+      console.error('Error adding to planner:', error);
+      alert('Failed to add to planner');
+    }
+  };
+
+  // Get trip days for date picker
+  const getTripDays = (trip) => {
+    if (!trip || !trip.start_date || !trip.end_date) return [];
+    
+    const start = new Date(trip.start_date);
+    const end = new Date(trip.end_date);
+    const days = [];
+    
+    for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+      days.push(new Date(date).toISOString().split('T')[0]);
+    }
+    
+    return days;
   };
 
   // Fetch location suggestions for trip creation
@@ -270,16 +424,28 @@ const Home = () => {
       return;
     }
 
+    // Get the earliest start date and latest end date from locations
+    const startDates = tripLocations.map(loc => loc.startDate).filter(date => date);
+    const endDates = tripLocations.map(loc => loc.endDate).filter(date => date);
+    
+    if (startDates.length === 0 || endDates.length === 0) {
+      alert('Please ensure all locations have valid dates');
+      return;
+    }
+
+    const tripStartDate = new Date(Math.min(...startDates.map(date => new Date(date))));
+    const tripEndDate = new Date(Math.max(...endDates.map(date => new Date(date))));
+
     try {
-      const response = await fetch('http://localhost:5000/api/trips/create', {
+      const response = await fetch('http://localhost:5000/api/trips', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: user.user_id,
           trip_name: tripForm.tripName,
           description: tripForm.description,
-          member_ids: tripForm.memberIds,
-          locations: tripLocations
+          start_date: tripStartDate.toISOString().split('T')[0],
+          end_date: tripEndDate.toISOString().split('T')[0],
+          created_by: user.user_id
         })
       });
 
@@ -756,7 +922,10 @@ const Home = () => {
       {user && (
         <div className="trips-dashboard">
           <div className="trips-header">
-            <h2>My Trips</h2>
+            <div className="trips-header-content">
+              <h2>My Trips</h2>
+              <p className="trips-subtitle">Plan, collaborate, and explore your adventures</p>
+            </div>
             <button 
               className="new-trip-btn"
               onClick={() => setShowTripModal(true)}
@@ -771,42 +940,116 @@ const Home = () => {
 
           <div className="trips-grid">
             {trips.length > 0 ? (
-              trips.map(trip => (
-                <div key={trip.group_id} className="trip-card">
-                  <div className="trip-card-header">
-                    <h3>{trip.group_name}</h3>
-                    <span className="trip-members">{trip.member_count || 1} members</span>
+              trips.map((trip, index) => {
+                // Parse dates if available
+                const startDate = trip.start_date ? new Date(trip.start_date) : null;
+                const endDate = trip.end_date ? new Date(trip.end_date) : null;
+                const isOwner = trip.role === 'owner';
+                
+                return (
+                  <div 
+                    key={trip.trip_id} 
+                    className="trip-card"
+                  >
+                    <div className="trip-icon-container">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                        <path d="M8 14h.01"></path>
+                        <path d="M12 14h.01"></path>
+                        <path d="M16 14h.01"></path>
+                        <path d="M8 18h.01"></path>
+                        <path d="M12 18h.01"></path>
+                        <path d="M16 18h.01"></path>
+                      </svg>
+                    </div>
+                    
+                    <div className="trip-card-content" onClick={() => navigate('/planner')}>
+                      <div className="trip-main-info">
+                        <div className="trip-title-row">
+                          <h3 className="trip-title">{trip.trip_name || trip.group_name || 'Untitled Trip'}</h3>
+                          {isOwner && (
+                            <span className="owner-badge">Owner</span>
+                          )}
+                        </div>
+                        
+                        <div className="trip-meta">
+                          {(startDate || endDate) && (
+                            <span className="trip-date-info">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                              </svg>
+                              {startDate && startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {endDate && ` - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
+                            </span>
+                          )}
+                          
+                          <span className="trip-member-info">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                              <circle cx="9" cy="7" r="4"></circle>
+                              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                            </svg>
+                            {trip.member_count || 1} {(trip.member_count || 1) === 1 ? 'member' : 'members'}
+                          </span>
+                        </div>
+                        
+                        {trip.description && (
+                          <p className="trip-description-text">{trip.description}</p>
+                        )}
+                      </div>
+                      
+                      <div className="trip-arrow">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                      </div>
+                    </div>
+                    
+                    {isOwner && (
+                      <button 
+                        className="trip-delete-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteTrip(trip.trip_id);
+                        }}
+                        title="Delete trip"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="3 6 5 6 21 6"></polyline>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                          <line x1="10" y1="11" x2="10" y2="17"></line>
+                          <line x1="14" y1="11" x2="14" y2="17"></line>
+                        </svg>
+                      </button>
+                    )}
                   </div>
-                  {trip.latest_message && (
-                    <p className="trip-latest-message">{trip.latest_message}</p>
-                  )}
-                  <div className="trip-card-actions">
-                    <button 
-                      className="trip-action-btn"
-                      onClick={() => navigate(`/chats/${trip.group_id}`)}
-                    >
-                      View Chat
-                    </button>
-                    <button 
-                      className="trip-action-btn secondary"
-                      onClick={() => navigate('/calendar')}
-                    >
-                      View Planner
-                    </button>
-                  </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <div className="no-trips">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
-                </svg>
+                <div className="no-trips-icon">
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                  </svg>
+                </div>
                 <h3>No trips yet</h3>
-                <p>Create your first trip to start planning your adventure</p>
+                <p>Create your first trip to start planning your next adventure with friends and family</p>
                 <button 
                   className="create-first-trip-btn"
                   onClick={() => setShowTripModal(true)}
                 >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
                   Create Your First Trip
                 </button>
               </div>
@@ -822,9 +1065,14 @@ const Home = () => {
       <div className="back-to-home">
         <button 
           onClick={() => {
-            setViewMode('homepage');
-            setSearchResults([]);
-            setSearchForm({ placeType: '', state: '', city: '', zipCode: '', selectedCategories: [] });
+            if (plannerContext) {
+              sessionStorage.removeItem('plannerContext');
+              navigate('/planner');
+            } else {
+              setViewMode('homepage');
+              setSearchResults([]);
+              setSearchForm({ placeType: '', state: '', city: '', zipCode: '', selectedCategories: [] });
+            }
           }}
           className="back-home-btn"
         >
@@ -832,7 +1080,7 @@ const Home = () => {
             <line x1="19" y1="12" x2="5" y2="12"></line>
             <polyline points="12 19 5 12 12 5"></polyline>
           </svg>
-          Back to Home
+          {plannerContext ? 'Back to Planner' : 'Back to Home'}
         </button>
       </div>
       <div className="search-form-container">
@@ -1067,11 +1315,16 @@ const Home = () => {
           <div className="results-top-bar">
             <button 
               onClick={() => {
-                setViewMode('homepage');
-                setSearchResults([]);
-                setSearchForm({ placeType: '', state: '', city: '', zipCode: '', selectedCategories: [] });
-                setSearchLoading(false);
-                window.history.pushState({}, '', window.location.pathname);
+                if (plannerContext) {
+                  sessionStorage.removeItem('plannerContext');
+                  navigate('/planner');
+                } else {
+                  setViewMode('homepage');
+                  setSearchResults([]);
+                  setSearchForm({ placeType: '', state: '', city: '', zipCode: '', selectedCategories: [] });
+                  setSearchLoading(false);
+                  window.history.pushState({}, '', window.location.pathname);
+                }
               }}
               className="back-home-btn"
             >
@@ -1079,7 +1332,7 @@ const Home = () => {
                 <line x1="19" y1="12" x2="5" y2="12"></line>
                 <polyline points="12 19 5 12 12 5"></polyline>
               </svg>
-              Back to Home
+              {plannerContext ? 'Back to Planner' : 'Back to Home'}
             </button>
           </div>
           
@@ -1325,13 +1578,16 @@ const Home = () => {
                   className="modal-action-btn primary"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedPlace(selectedPlaceForModal);
-                    setIsCalendarModalOpen(true);
-                    setSelectedPlaceForModal(null);
+                    handleOpenPlannerSelector(selectedPlaceForModal);
                   }}
                 >
-                  <FaCalendarPlus />
-                  Add to Calendar
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  </svg>
+                  Add to Planner
                 </button>
                 
                 <button 
@@ -1343,6 +1599,97 @@ const Home = () => {
                 >
                   <FaMapMarkerAlt />
                   View on Maps
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trip/Day Selector for Adding to Planner */}
+      {showTripSelector && selectedPlaceForModal && (
+        <div className="place-modal-overlay" onClick={() => setShowTripSelector(false)}>
+          <div className="trip-modal-content" style={{maxWidth: '500px'}} onClick={(e) => e.stopPropagation()}>
+            <button 
+              className="close-modal-btn"
+              onClick={() => setShowTripSelector(false)}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+
+            <div className="trip-modal-header">
+              <h2>Add to Trip</h2>
+              <p>Select which trip and day to add "{selectedPlaceForModal.place_name}"</p>
+            </div>
+
+            <div className="trip-modal-body">
+              <div className="trip-form-section">
+                <label>Select Trip *</label>
+                <div className="select-wrapper">
+                  <select
+                    value={selectedTripForPlanner?.trip_id || ''}
+                    onChange={(e) => {
+                      const trip = trips.find(t => t.trip_id === parseInt(e.target.value));
+                      setSelectedTripForPlanner(trip);
+                      setSelectedDayForPlanner(''); // Reset day when trip changes
+                    }}
+                    className="trip-input"
+                  >
+                    <option value="">Choose a trip...</option>
+                    {trips.map(trip => (
+                      <option key={trip.trip_id} value={trip.trip_id}>
+                        {trip.trip_name || trip.group_name}
+                      </option>
+                    ))}
+                  </select>
+                  <svg className="select-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </div>
+              </div>
+
+              {selectedTripForPlanner && (
+                <div className="trip-form-section">
+                  <label>Select Day *</label>
+                  <div className="select-wrapper">
+                    <select
+                      value={selectedDayForPlanner}
+                      onChange={(e) => setSelectedDayForPlanner(e.target.value)}
+                      className="trip-input"
+                    >
+                      <option value="">Choose a day...</option>
+                      {getTripDays(selectedTripForPlanner).map(day => {
+                        const date = new Date(day);
+                        return (
+                          <option key={day} value={day}>
+                            {date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <svg className="select-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </div>
+                </div>
+              )}
+
+              <div className="trip-modal-footer">
+                <button
+                  onClick={() => setShowTripSelector(false)}
+                  className="trip-cancel-btn"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddToPlanner}
+                  className="trip-create-btn"
+                  disabled={!selectedTripForPlanner || !selectedDayForPlanner}
+                >
+                  Add to Planner
                 </button>
               </div>
             </div>

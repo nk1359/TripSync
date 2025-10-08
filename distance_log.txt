@@ -1,0 +1,82 @@
+
+=== Distance Calculation at 2025-10-07 20:22:48.292044 ===
+[DISTANCE-CALC] Calling Google API with:
+  Pair 1: '127 Brace St, Syracuse, NY 13208, USA' -> '421 7th N St, Liverpool, NY 13088, USA'
+  Pair 2: '421 7th N St, Liverpool, NY 13088, USA' -> '1526 Queen St W, Toronto, ON M6R 1A4, Canada'
+[DISTANCE-CALC] Google API Status: OK
+Full API Response:
+{
+  "destination_addresses": [
+    "421 7th N St, Liverpool, NY 13088, USA",
+    "1526 Queen St W, Toronto, ON M6R 1A4, Canada"
+  ],
+  "origin_addresses": [
+    "127 Brace St, Syracuse, NY 13208, USA",
+    "421 7th N St, Liverpool, NY 13088, USA"
+  ],
+  "rows": [
+    {
+      "elements": [
+        {
+          "distance": {
+            "text": "1.6 mi",
+            "value": 2601
+          },
+          "duration": {
+            "text": "6 mins",
+            "value": 330
+          },
+          "status": "OK"
+        },
+        {
+          "distance": {
+            "text": "239 mi",
+            "value": 384872
+          },
+          "duration": {
+            "text": "3 hours 50 mins",
+            "value": 13803
+          },
+          "status": "OK"
+        }
+      ]
+    },
+    {
+      "elements": [
+        {
+          "distance": {
+            "text": "1 ft",
+            "value": 0
+          },
+          "duration": {
+            "text": "1 min",
+            "value": 0
+          },
+          "status": "OK"
+        },
+        {
+          "distance": {
+            "text": "238 mi",
+            "value": 382828
+          },
+          "duration": {
+            "text": "3 hours 48 mins",
+            "value": 13703
+          },
+          "status": "OK"
+        }
+      ]
+    }
+  ],
+  "status": "OK"
+}
+[DISTANCE-CALC] Pair 1 status: OK
+[DISTANCE-CALC] Updating item 'Super 8 by Wyndham Liverpool/Syracuse North Airport':
+  From: 127 Brace St
+  Distance: 1.6 mi
+  Duration: 6 mins
+[DISTANCE-CALC] Pair 2 status: OK
+[DISTANCE-CALC] Updating item 'Himalayan Kitchen (Momo2Go)':
+  From: Super 8 by Wyndham Liverpool/Syracuse North Airport
+  Distance: 238 mi
+  Duration: 3 hours 48 mins

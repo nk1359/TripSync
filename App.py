@@ -430,89 +430,6 @@ def create_chat_groups():
             cursor.close()
             conn.close()
 
-@app.route('/api/trips/create', methods=['POST'])
-def create_trip():
-    """Create a trip (chat_groups + calendar events for locations)"""
-    data = request.json
-    user_id = data.get('user_id')
-    trip_name = data.get('trip_name')
-    description = data.get('description', '')
-    member_ids = data.get('member_ids', [])
-    locations = data.get('locations', [])
-    
-    if not user_id or not trip_name:
-        return jsonify({"error": "user_id and trip_name are required"}), 400
-    
-    if not locations:
-        return jsonify({"error": "At least one location is required"}), 400
-        
-    conn = None
-    try:
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor()
-        
-        # Create chat_groups for the trip
-        cursor.execute("""
-            INSERT INTO `chat_groups` (chat_groups_name, created_by)
-            VALUES (%s, %s)
-        """, (trip_name, user_id))
-        
-        chat_groups_id = cursor.lastrowid
-        
-        # Add creator to chat_groups
-        cursor.execute("""
-            INSERT INTO user_chat_groups (user_id, chat_groups_id)
-            VALUES (%s, %s)
-        """, (user_id, chat_groups_id))
-        
-        # Add other members if specified
-        for member_id in member_ids:
-            try:
-                cursor.execute("""
-                    INSERT INTO user_chat_groups (user_id, chat_groups_id)
-                    VALUES (%s, %s)
-                """, (member_id, chat_groups_id))
-            except mysql.connector.Error:
-                # Skip if user is already in chat_groups
-                pass
-        
-        # Create calendar events for each location
-        for location in locations:
-            city = location.get('city')
-            state = location.get('state')
-            start_date = location.get('startDate')
-            end_date = location.get('endDate') or start_date
-            
-            if not city or not start_date:
-                continue
-            
-            location_str = f"{city}, {state}" if state else city
-            event_title = f"Visit {city}"
-            
-            cursor.execute("""
-                INSERT INTO calendar_events 
-                (title, description, start_date, end_date, location, chat_groups_id, created_by)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (event_title, description, start_date, end_date, location_str, chat_groups_id, user_id))
-        
-        conn.commit()
-        
-        return jsonify({
-            "message": "Trip created successfully",
-            "chat_groups_id": chat_groups_id,
-            "trip_name": trip_name
-        }), 201
-        
-    except mysql.connector.Error as err:
-        print(f"Database error: {err}")
-        if conn:
-            conn.rollback()
-        return jsonify({"error": "Database error occurred"}), 500
-    finally:
-        if conn and conn.is_connected():
-            cursor.close()
-            conn.close()
-
 @app.route('/api/chat_groups/<int:chat_groups_id>/messages', methods=['GET'])
 def get_messages(chat_groups_id):
     conn = None
@@ -1658,11 +1575,797 @@ def get_welcome_data(user_id):
 @app.route('/home')
 @app.route('/chats')
 @app.route('/chats/<path:path>')
-@app.route('/calendar')
+@app.route('/planner')
 @app.route('/login')
 @app.route('/register')
 def react_routes(path=None):
     return send_from_directory(app.static_folder, 'index.html')
+
+# Trip management routes
+@app.route('/api/trips/<int:user_id>', methods=['GET'])
+def get_user_trips(user_id):
+    """Get all trips for a user"""
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get trips where user is a participant
+        query = """
+        SELECT DISTINCT t.*, tp.role
+        FROM trips t
+        JOIN trip_participants tp ON t.trip_id = tp.trip_id
+        WHERE tp.user_id = %s
+        ORDER BY t.created_at DESC
+        """
+        cursor.execute(query, (user_id,))
+        trips = cursor.fetchall()
+        
+        return jsonify({"trips": trips})
+        
+    except Exception as e:
+        print(f"Database error in get_user_trips: {e}")
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/trips', methods=['POST'])
+def create_trip():
+    """Create a new trip"""
+    data = request.json
+    trip_name = data.get('trip_name')
+    description = data.get('description')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    created_by = data.get('created_by')
+    
+    if not all([trip_name, start_date, end_date, created_by]):
+        return jsonify({"error": "Missing required fields"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        
+        # Create trip
+        trip_query = """
+        INSERT INTO trips (trip_name, description, start_date, end_date, created_by)
+        VALUES (%s, %s, %s, %s, %s)
+        """
+        cursor.execute(trip_query, (trip_name, description, start_date, end_date, created_by))
+        trip_id = cursor.lastrowid
+        
+        # Add creator as trip participant
+        participant_query = """
+        INSERT INTO trip_participants (trip_id, user_id, role)
+        VALUES (%s, %s, 'owner')
+        """
+        cursor.execute(participant_query, (trip_id, created_by))
+        
+        # Create group chat for the trip
+        chat_query = """
+        INSERT INTO group_chats (trip_id, chat_name)
+        VALUES (%s, %s)
+        """
+        cursor.execute(chat_query, (trip_id, f"{trip_name} Chat"))
+        chat_id = cursor.lastrowid
+        
+        # Add creator to group chat
+        chat_participant_query = """
+        INSERT INTO chat_participants (chat_id, user_id)
+        VALUES (%s, %s)
+        """
+        cursor.execute(chat_participant_query, (chat_id, created_by))
+        
+        conn.commit()
+        
+        return jsonify({
+            "success": True,
+            "trip_id": trip_id,
+            "chat_id": chat_id,
+            "message": "Trip created successfully"
+        }), 201
+        
+    except Exception as e:
+        print(f"Database error in create_trip: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/trips/<int:trip_id>', methods=['DELETE'])
+def delete_trip(trip_id):
+    """Delete a trip (only owner can delete)"""
+    data = request.json
+    user_id = data.get('user_id')
+    
+    if not user_id:
+        return jsonify({"error": "User ID is required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        
+        # Check if user is the owner of the trip
+        check_query = """
+        SELECT role FROM trip_participants
+        WHERE trip_id = %s AND user_id = %s
+        """
+        cursor.execute(check_query, (trip_id, user_id))
+        result = cursor.fetchone()
+        
+        if not result or result[0] != 'owner':
+            return jsonify({"error": "Only the trip owner can delete this trip"}), 403
+        
+        # Delete related records first (foreign key constraints)
+        # Delete planner items
+        cursor.execute("DELETE FROM planner WHERE trip_id = %s", (trip_id,))
+        
+        # Delete chat messages
+        cursor.execute("""
+            DELETE FROM chat_messages 
+            WHERE chat_id IN (SELECT chat_id FROM group_chats WHERE trip_id = %s)
+        """, (trip_id,))
+        
+        # Delete chat participants
+        cursor.execute("""
+            DELETE FROM chat_participants 
+            WHERE chat_id IN (SELECT chat_id FROM group_chats WHERE trip_id = %s)
+        """, (trip_id,))
+        
+        # Delete group chats
+        cursor.execute("DELETE FROM group_chats WHERE trip_id = %s", (trip_id,))
+        
+        # Delete trip participants
+        cursor.execute("DELETE FROM trip_participants WHERE trip_id = %s", (trip_id,))
+        
+        # Finally, delete the trip itself
+        cursor.execute("DELETE FROM trips WHERE trip_id = %s", (trip_id,))
+        
+        conn.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Trip deleted successfully"
+        }), 200
+        
+    except Exception as e:
+        print(f"Database error in delete_trip: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# Planner routes
+@app.route('/api/planner/<int:trip_id>', methods=['GET'])
+def get_planner_items(trip_id):
+    """Get all planner items for a trip"""
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        query = """
+        SELECT p.*, u.username as created_by_username
+        FROM planner p
+        JOIN users u ON p.created_by = u.user_id
+        WHERE p.trip_id = %s
+        ORDER BY p.start_date, p.order_index, p.start_time, p.planner_id
+        """
+        cursor.execute(query, (trip_id,))
+        items = cursor.fetchall()
+        
+        # Convert date and time objects to ISO format strings
+        for item in items:
+            if item.get('start_date'):
+                item['start_date'] = item['start_date'].strftime('%Y-%m-%d') if hasattr(item['start_date'], 'strftime') else str(item['start_date'])[:10]
+            if item.get('end_date'):
+                item['end_date'] = item['end_date'].strftime('%Y-%m-%d') if hasattr(item['end_date'], 'strftime') else str(item['end_date'])[:10]
+            # Convert time objects to string format (HH:MM:SS)
+            if item.get('start_time'):
+                item['start_time'] = str(item['start_time']) if item['start_time'] else None
+            if item.get('end_time'):
+                item['end_time'] = str(item['end_time']) if item['end_time'] else None
+        
+        # Just return items immediately - distance calculation happens separately
+        # Frontend will call /api/planner/calculate-distances separately if needed
+        
+        return jsonify({"items": items})
+        
+    except Exception as e:
+        print(f"Database error in get_planner_items: {e}")
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/planner/items', methods=['POST'])
+def create_planner_item():
+    """Create a new planner item"""
+    data = request.json
+    trip_id = data.get('trip_id')
+    item_name = data.get('item_name')
+    item_type = data.get('item_type', 'custom')
+    description = data.get('description')
+    location = data.get('location')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    start_time = data.get('start_time')
+    end_time = data.get('end_time')
+    cost = data.get('cost')
+    notes = data.get('notes')
+    created_by = data.get('created_by')
+    google_place_id = data.get('google_place_id')
+    
+    print(f"[ADD-ITEM] Creating planner item: {item_name} for trip {trip_id}")
+    
+    if not all([trip_id, item_name, start_date, created_by]):
+        return jsonify({"error": "Missing required fields"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        
+        # Get the next order_index for this trip and date
+        cursor.execute("""
+            SELECT COALESCE(MAX(order_index), -1) + 1 as next_order
+            FROM planner
+            WHERE trip_id = %s AND start_date = %s
+        """, (trip_id, start_date))
+        next_order = cursor.fetchone()[0]
+        
+        # Create planner item
+        item_query = """
+        INSERT INTO planner (trip_id, item_name, item_type, description, location, 
+                           start_date, end_date, start_time, end_time, cost, notes, created_by, google_place_id, order_index)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(item_query, (
+            trip_id, item_name, item_type, description, location,
+            start_date, end_date, start_time, end_time, cost, notes, created_by, google_place_id, next_order
+        ))
+        planner_id = cursor.lastrowid
+        
+        # If google_place_id is provided, store the place and link it
+        if google_place_id:
+            # First, get place details from Google API
+            if gmaps:
+                try:
+                    place_details = gmaps.place(google_place_id, fields=['name', 'formatted_address', 'geometry', 'rating', 'types'])
+                    place_data = place_details.get('result', {})
+                    
+                    # Store or update place in google_places table
+                    place_query = """
+                    INSERT INTO google_places (place_id, name, address, latitude, longitude, place_type, rating)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                    name = VALUES(name), address = VALUES(address), 
+                    latitude = VALUES(latitude), longitude = VALUES(longitude),
+                    place_type = VALUES(place_type), rating = VALUES(rating)
+                    """
+                    
+                    geometry = place_data.get('geometry', {}).get('location', {})
+                    place_type = ', '.join(place_data.get('types', []))
+                    
+                    cursor.execute(place_query, (
+                        google_place_id,
+                        place_data.get('name', ''),
+                        place_data.get('formatted_address', ''),
+                        geometry.get('lat'),
+                        geometry.get('lng'),
+                        place_type,
+                        place_data.get('rating')
+                    ))
+                    
+                    # Link planner item to google place
+                    link_query = """
+                    INSERT INTO planner_places (planner_id, google_place_id)
+                    VALUES (%s, %s)
+                    """
+                    cursor.execute(link_query, (planner_id, google_place_id))
+                    
+                except Exception as e:
+                    print(f"Error fetching place details: {e}")
+        
+        conn.commit()
+        
+        # Return the newly created item immediately
+        cursor_dict = conn.cursor(dictionary=True)
+        cursor_dict.execute("""
+            SELECT p.*, u.username as created_by_username
+            FROM planner p
+            JOIN users u ON p.created_by = u.user_id
+            WHERE p.planner_id = %s
+        """, (planner_id,))
+        new_item = cursor_dict.fetchone()
+        
+        # Convert dates to string format
+        if new_item.get('start_date'):
+            new_item['start_date'] = new_item['start_date'].strftime('%Y-%m-%d') if hasattr(new_item['start_date'], 'strftime') else str(new_item['start_date'])[:10]
+        if new_item.get('end_date'):
+            new_item['end_date'] = new_item['end_date'].strftime('%Y-%m-%d') if hasattr(new_item['end_date'], 'strftime') else str(new_item['end_date'])[:10]
+        
+        # Mark distance as calculating (will be updated by background fetch)
+        new_item['distance_calculating'] = True
+        
+        print(f"[ADD-ITEM] Successfully created item with ID: {planner_id}")
+        print(f"[ADD-ITEM] Returning item: {new_item['item_name']}")
+        
+        return jsonify({
+            "success": True,
+            "planner_id": planner_id,
+            "message": "Planner item created successfully",
+            "item": new_item
+        }), 201
+        
+    except Exception as e:
+        print(f"Database error in create_planner_item: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/planner/<int:trip_id>/calculate-distances', methods=['POST'])
+def calculate_planner_distances(trip_id):
+    """Calculate and cache distances between planner items"""
+    if not gmaps:
+        return jsonify({"error": "Google Maps API not configured"}), 500
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get all items for this trip, ordered correctly
+        query = """
+        SELECT planner_id, item_name, location, start_date
+        FROM planner
+        WHERE trip_id = %s
+        ORDER BY start_date, order_index, start_time, planner_id
+        """
+        cursor.execute(query, (trip_id,))
+        items = cursor.fetchall()
+        
+        if len(items) < 2:
+            return jsonify({"message": "Not enough items to calculate distances", "updated": 0})
+        
+        print(f"[DISTANCE-CACHE] Calculating distances for {len(items)} items")
+        
+        # Build batch request for Distance Matrix API
+        origins = []
+        destinations = []
+        item_pairs = []
+        
+        for i in range(len(items) - 1):
+            current_item = items[i]
+            next_item = items[i + 1]
+            
+            origin = current_item.get('location') or current_item.get('item_name')
+            destination = next_item.get('location') or next_item.get('item_name')
+            
+            if origin and destination:
+                origins.append(origin)
+                destinations.append(destination)
+                item_pairs.append((current_item, next_item))
+        
+        if not origins:
+            return jsonify({"message": "No valid locations to calculate", "updated": 0})
+        
+        # Single batch API call
+        result = gmaps.distance_matrix(
+            origins=origins,
+            destinations=destinations,
+            mode="driving",
+            units="imperial"
+        )
+        
+        if result.get('status') == 'REQUEST_DENIED':
+            return jsonify({"error": "Distance Matrix API not enabled"}), 403
+        
+        updated_count = 0
+        
+        # Update database with cached distances
+        if result.get('rows'):
+            for i, row in enumerate(result['rows']):
+                if i < len(item_pairs) and row.get('elements') and i < len(row['elements']):
+                    # IMPORTANT: For batch Distance Matrix, each row has multiple elements
+                    # We want row[i] element[i] to get the correct pair
+                    element = row['elements'][i]
+                    current_item, next_item = item_pairs[i]
+                    
+                    if element['status'] == 'OK':
+                        distance_text = element['distance']['text']
+                        duration_text = element['duration']['text']
+                        from_location = current_item.get('item_name')
+                        
+                        cursor.execute("""
+                            UPDATE planner
+                            SET distance_from_previous = %s,
+                                duration_from_previous = %s,
+                                from_location = %s
+                            WHERE planner_id = %s
+                        """, (
+                            distance_text,
+                            duration_text,
+                            from_location,
+                            next_item['planner_id']
+                        ))
+                        updated_count += 1
+                        print(f"[DISTANCE-CACHE] Cached: {duration_text} / {distance_text}")
+        
+        conn.commit()
+        print(f"[DISTANCE-CACHE] Successfully cached distances for {updated_count} items")
+        
+        return jsonify({"success": True, "updated": updated_count})
+        
+    except Exception as e:
+        print(f"Error calculating distances: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/planner/items/reorder', methods=['POST'])
+def reorder_planner_items():
+    """Update order_index for items after drag and drop"""
+    data = request.json
+    items_order = data.get('items')  # Array of {planner_id, order_index}
+    
+    if not items_order:
+        return jsonify({"error": "Missing items order"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        
+        print(f"[REORDER] Updating order for {len(items_order)} items")
+        
+        for item in items_order:
+            cursor.execute("""
+                UPDATE planner
+                SET order_index = %s
+                WHERE planner_id = %s
+            """, (item['order_index'], item['planner_id']))
+            print(f"[REORDER] Set order_index={item['order_index']} for planner_id={item['planner_id']}")
+        
+        conn.commit()
+        
+        return jsonify({"success": True, "message": f"Updated order for {len(items_order)} items"})
+        
+    except Exception as e:
+        print(f"Error in reorder_planner_items: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/planner/items/fix-categories', methods=['POST'])
+def fix_planner_item_categories():
+    """Fix categories for existing planner items based on their Google Place ID"""
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get all planner items with google_place_id
+        query = """
+        SELECT planner_id, item_name, google_place_id, item_type
+        FROM planner
+        WHERE google_place_id IS NOT NULL AND google_place_id != ''
+        """
+        cursor.execute(query)
+        items = cursor.fetchall()
+        
+        updated_count = 0
+        skipped_count = 0
+        print(f"[FIX-CATEGORIES] Found {len(items)} items with Google Place IDs")
+        
+        if not gmaps:
+            print("[FIX-CATEGORIES] Google Maps API not configured, skipping")
+            return jsonify({"error": "Google Maps API not configured"}), 500
+        
+        for item in items:
+            try:
+                print(f"[FIX-CATEGORIES] Processing: {item['item_name']} (ID: {item['planner_id']})")
+                
+                # Get place details from Google
+                place = gmaps.place(place_id=item['google_place_id'])
+                
+                if place.get('status') == 'OK' and place.get('result'):
+                    types = place['result'].get('types', [])
+                    print(f"[FIX-CATEGORIES] Place types: {types}")
+                    
+                    # Category mapping (same as in search endpoint)
+                    category_map = {
+                        'restaurant': 'Restaurants',
+                        'cafe': 'Restaurants',
+                        'bar': 'Restaurants',
+                        'night_club': 'Nightlife',
+                        'museum': 'Museums',
+                        'art_gallery': 'Museums',
+                        'park': 'Parks & Recreation',
+                        'amusement_park': 'Parks & Recreation',
+                        'zoo': 'Parks & Recreation',
+                        'aquarium': 'Parks & Recreation',
+                        'shopping_mall': 'Shopping',
+                        'store': 'Shopping',
+                        'lodging': 'Hotels',
+                        'tourist_attraction': 'Attractions',
+                        'point_of_interest': 'Attractions'
+                    }
+                    
+                    category = 'Attractions'  # Default
+                    for place_type in types:
+                        if place_type in category_map:
+                            category = category_map[place_type]
+                            print(f"[FIX-CATEGORIES] Matched type '{place_type}' -> '{category}'")
+                            break
+                    
+                    # Update the item if category is different
+                    if item['item_type'] != category:
+                        update_query = """
+                        UPDATE planner
+                        SET item_type = %s
+                        WHERE planner_id = %s
+                        """
+                        cursor.execute(update_query, (category, item['planner_id']))
+                        updated_count += 1
+                        print(f"[FIX-CATEGORIES] Updated '{item['item_name']}' from '{item['item_type']}' to '{category}'")
+                    else:
+                        skipped_count += 1
+                        print(f"[FIX-CATEGORIES] Skipped '{item['item_name']}' - already correct ({category})")
+                else:
+                    skipped_count += 1
+                    print(f"[FIX-CATEGORIES] Could not get place details for '{item['item_name']}'")
+                
+            except Exception as e:
+                skipped_count += 1
+                print(f"[FIX-CATEGORIES] Error updating item {item['planner_id']}: {str(e)[:200]}")
+                continue
+        
+        conn.commit()
+        message = f"Updated {updated_count} items, skipped {skipped_count} items"
+        print(f"[FIX-CATEGORIES] {message}")
+        return jsonify({"message": message, "updated": updated_count, "skipped": skipped_count})
+        
+    except Exception as e:
+        print(f"Error in fix_planner_item_categories: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/planner/items/<int:planner_id>', methods=['PUT'])
+def update_planner_item(planner_id):
+    """Update a planner item"""
+    data = request.json
+    user_id = data.get('user_id')
+    
+    # Check if user has permission to update this item
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if user is participant in the trip
+        check_query = """
+        SELECT p.created_by, t.trip_id
+        FROM planner p
+        JOIN trips t ON p.trip_id = t.trip_id
+        JOIN trip_participants tp ON t.trip_id = tp.trip_id
+        WHERE p.planner_id = %s AND tp.user_id = %s
+        """
+        cursor.execute(check_query, (planner_id, user_id))
+        result = cursor.fetchone()
+        
+        if not result:
+            return jsonify({"error": "Permission denied"}), 403
+        
+        # Update the item
+        update_fields = []
+        update_values = []
+        
+        for field in ['item_name', 'item_type', 'description', 'location', 
+                     'start_date', 'end_date', 'start_time', 'end_time', 'cost', 'notes']:
+            if field in data:
+                update_fields.append(f"{field} = %s")
+                update_values.append(data[field])
+        
+        if update_fields:
+            update_values.append(planner_id)
+            update_query = f"""
+            UPDATE planner 
+            SET {', '.join(update_fields)}
+            WHERE planner_id = %s
+            """
+            cursor.execute(update_query, update_values)
+            conn.commit()
+        
+        return jsonify({"success": True, "message": "Planner item updated successfully"})
+        
+    except Exception as e:
+        print(f"Database error in update_planner_item: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/planner/items/<int:planner_id>/notes', methods=['PUT'])
+def update_planner_item_notes(planner_id):
+    """Update notes for a planner item"""
+    data = request.json
+    user_id = data.get('user_id')
+    notes = data.get('notes', '')
+    
+    if not user_id:
+        return jsonify({"error": "User ID required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if user has permission to update this item
+        check_query = """
+        SELECT p.created_by, t.trip_id
+        FROM planner p
+        JOIN trips t ON p.trip_id = t.trip_id
+        JOIN trip_participants tp ON t.trip_id = tp.trip_id
+        WHERE p.planner_id = %s AND tp.user_id = %s
+        """
+        cursor.execute(check_query, (planner_id, user_id))
+        result = cursor.fetchone()
+        
+        if not result:
+            return jsonify({"error": "Permission denied"}), 403
+        
+        # Update the notes
+        update_query = """
+        UPDATE planner 
+        SET notes = %s
+        WHERE planner_id = %s
+        """
+        cursor.execute(update_query, (notes, planner_id))
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Notes updated successfully"})
+        
+    except Exception as e:
+        print(f"Database error in update_planner_item_notes: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/planner/items/<int:planner_id>/time', methods=['PUT'])
+def update_planner_item_time(planner_id):
+    """Update time for a planner item"""
+    data = request.json
+    user_id = data.get('user_id')
+    start_time = data.get('start_time')
+    end_time = data.get('end_time')
+    
+    if not user_id:
+        return jsonify({"error": "User ID required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if user has permission to update this item
+        check_query = """
+        SELECT p.created_by, t.trip_id
+        FROM planner p
+        JOIN trips t ON p.trip_id = t.trip_id
+        JOIN trip_participants tp ON t.trip_id = tp.trip_id
+        WHERE p.planner_id = %s AND tp.user_id = %s
+        """
+        cursor.execute(check_query, (planner_id, user_id))
+        result = cursor.fetchone()
+        
+        if not result:
+            return jsonify({"error": "Permission denied"}), 403
+        
+        # Update the time
+        update_query = """
+        UPDATE planner 
+        SET start_time = %s, end_time = %s
+        WHERE planner_id = %s
+        """
+        cursor.execute(update_query, (start_time, end_time, planner_id))
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Time updated successfully"})
+        
+    except Exception as e:
+        print(f"Database error in update_planner_item_time: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/planner/items/<int:planner_id>', methods=['DELETE'])
+def delete_planner_item(planner_id):
+    """Delete a planner item"""
+    user_id = request.args.get('user_id')
+    
+    if not user_id:
+        return jsonify({"error": "User ID required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if user has permission to delete this item
+        check_query = """
+        SELECT p.created_by, t.trip_id
+        FROM planner p
+        JOIN trips t ON p.trip_id = t.trip_id
+        JOIN trip_participants tp ON t.trip_id = tp.trip_id
+        WHERE p.planner_id = %s AND tp.user_id = %s
+        """
+        cursor.execute(check_query, (planner_id, user_id))
+        result = cursor.fetchone()
+        
+        if not result:
+            return jsonify({"error": "Permission denied"}), 403
+        
+        # Delete the item
+        delete_query = "DELETE FROM planner WHERE planner_id = %s"
+        cursor.execute(delete_query, (planner_id,))
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Planner item deleted successfully"})
+        
+    except Exception as e:
+        print(f"Database error in delete_planner_item: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# Serve React App
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

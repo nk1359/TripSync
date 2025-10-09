@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -6,7 +6,8 @@ import {
   FaMapMarkerAlt, 
   FaTrash, 
   FaSearch,
-  FaGripVertical
+  FaGripVertical,
+  FaChevronDown
 } from 'react-icons/fa';
 import Layout from './Layout';
 import './styles/Planner.css';
@@ -19,6 +20,10 @@ const Planner = () => {
   const [draggedItem, setDraggedItem] = useState(null);
   const [dragOverItem, setDragOverItem] = useState(null);
   const [dragPosition, setDragPosition] = useState(null); // 'above' or 'below'
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [hoveredTrip, setHoveredTrip] = useState(null);
+  
+  const dropdownRef = useRef(null);
 
   const navigate = useNavigate();
   const currentUser = JSON.parse(localStorage.getItem('user')) || {};
@@ -33,6 +38,21 @@ const Planner = () => {
     
     fetchTrips();
   }, [currentUserId, navigate]);
+
+  // Handle click outside dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setDropdownOpen(false);
+        setHoveredTrip(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Fetch planner items when trip is selected or when returning from search
   useEffect(() => {
@@ -137,6 +157,13 @@ const Planner = () => {
 
   const handleTripChange = (trip) => {
     setSelectedTrip(trip);
+    setDropdownOpen(false);
+    setHoveredTrip(null);
+  };
+
+  const toggleDropdown = () => {
+    setDropdownOpen(!dropdownOpen);
+    setHoveredTrip(null);
   };
 
   const handleAddCustomLocation = async (day) => {
@@ -502,19 +529,32 @@ const Planner = () => {
     <Layout>
       <div className="planner-page">
         <div className="planner-header">
-          <div className="trip-selector">
-            <select
-              id="trip-select"
-              value={selectedTrip?.trip_id || ''}
-              onChange={(e) => {
-                const trip = trips.find(t => t.trip_id === parseInt(e.target.value));
-                handleTripChange(trip);
-              }}
+          <div className="trip-selector" ref={dropdownRef}>
+            <div 
+              className={`dropdown-trigger ${dropdownOpen ? 'open' : ''}`}
+              onClick={toggleDropdown}
             >
-              {trips.map(trip => (
-                <option key={trip.trip_id} value={trip.trip_id}>{trip.trip_name || trip.group_name}</option>
-              ))}
-            </select>
+              <span className="dropdown-text">
+                {selectedTrip ? (selectedTrip.trip_name || selectedTrip.group_name) : 'Select Trip'}
+              </span>
+              <FaChevronDown className={`dropdown-arrow ${dropdownOpen ? 'rotated' : ''}`} />
+            </div>
+            
+            {dropdownOpen && (
+              <div className="dropdown-menu">
+                {trips.map((trip, index) => (
+                  <div
+                    key={trip.trip_id}
+                    className={`dropdown-option ${hoveredTrip === trip.trip_id ? 'hovered' : ''} ${selectedTrip?.trip_id === trip.trip_id ? 'selected' : ''}`}
+                    onClick={() => handleTripChange(trip)}
+                    onMouseEnter={() => setHoveredTrip(trip.trip_id)}
+                    onMouseLeave={() => setHoveredTrip(null)}
+                  >
+                    {trip.trip_name || trip.group_name}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         

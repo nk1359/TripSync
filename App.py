@@ -320,208 +320,180 @@ def get_friends(user_id):
             cursor.close()
             conn.close()
 
-# Chat/Group routes
-@app.route('/api/groups/<int:user_id>', methods=['GET'])
-@app.route('/api/chat_groups/<int:user_id>', methods=['GET'])
-def get_chat_groups(user_id):
+# ===== CHAT API ROUTES =====
+
+@app.route('/api/chats/user/<int:user_id>', methods=['GET'])
+def get_user_chats(user_id):
+    """Get all chats for a user (trip-based chats they're part of)"""
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor(dictionary=True)
         
-        # First get the user's username
-        cursor.execute("SELECT username FROM users WHERE user_id = %s", (user_id,))
-        user = cursor.fetchone()
-        if not user:
-            return jsonify([]), 200
+        # Get all group chats for trips the user is part of
+        query = """
+        SELECT 
+            gc.chat_id,
+            gc.trip_id,
+            gc.chat_name,
+            t.trip_name,
+            gc.created_at,
+            (SELECT COUNT(*) FROM chat_participants WHERE chat_id = gc.chat_id) as member_count
+        FROM group_chats gc
+        JOIN trips t ON gc.trip_id = t.trip_id
+        WHERE gc.chat_id IN (
+            SELECT chat_id FROM chat_participants WHERE user_id = %s
+        )
+        ORDER BY gc.created_at DESC
+        """
+        cursor.execute(query, (user_id,))
+        chats = cursor.fetchall()
         
-        username = user['username']
-        
-        # Get all groups user is part of or created
-        cursor.execute("""
-            SELECT DISTINCT g.id as group_id, g.name as group_name, g.created_at
-        FROM chat_groups g
-            WHERE g.created_by = %s 
-            OR g.id IN (SELECT group_id FROM group_members WHERE username = %s)
-            ORDER BY g.created_at DESC
-        """, (username, username))
-        
-        groups = cursor.fetchall()
-        
-        # For each group, get the latest message and member count
-        for group in groups:
+        # Get last message for each chat
+        for chat in chats:
             cursor.execute("""
-                SELECT m.message, m.created_at as timestamp
-                FROM messages m
-                WHERE m.group_id = %s
-                ORDER BY m.created_at DESC
+                SELECT cm.message, cm.sent_at, u.username, u.first_name
+                FROM chat_messages cm
+                JOIN users u ON cm.user_id = u.user_id
+                WHERE cm.chat_id = %s
+                ORDER BY cm.sent_at DESC
                 LIMIT 1
-            """, (group['group_id'],))
+            """, (chat['chat_id'],))
             
-            latest_message = cursor.fetchone()
-            if latest_message:
-                group['latest_message'] = latest_message['message']
-                group['latest_message_time'] = latest_message['timestamp']
+            last_msg = cursor.fetchone()
+            if last_msg:
+                chat['last_message'] = last_msg['message']
+                chat['last_message_time'] = last_msg['sent_at']
+                chat['last_sender'] = last_msg['first_name']
             else:
-                group['latest_message'] = None
-                group['latest_message_time'] = None
-            
-            # Get member count
-            cursor.execute("""
-                SELECT COUNT(*) as count FROM group_members WHERE group_id = %s
-            """, (group['group_id'],))
-            count_result = cursor.fetchone()
-            group['member_count'] = (count_result['count'] + 1) if count_result else 1  # +1 for creator
+                chat['last_message'] = None
+                chat['last_message_time'] = None
+                chat['last_sender'] = None
         
-        return jsonify(groups), 200
+        return jsonify({"chats": chats}), 200
         
-    except mysql.connector.Error as err:
-        print(f"Database error in get_chat_groups: {err}")
-        return jsonify({"error": "Database error occurred"}), 500
+    except Exception as e:
+        print(f"Error in get_user_chats: {e}")
+        return jsonify({"error": "Database error"}), 500
     finally:
-        if conn and conn.is_connected():
-            cursor.close()
+        if conn:
             conn.close()
 
-@app.route('/api/chat_groups', methods=['POST'])
-def create_chat_groups():
-    data = request.json
-    chat_groups_name = data.get('chat_groups_name')
-    user_id = data.get('user_id')
-    member_ids = data.get('member_ids', [])
+@app.route('/api/chats/<int:chat_id>/messages', methods=['GET'])
+def get_chat_messages(chat_id):
+    """Get all messages in a chat"""
+    user_id = request.args.get('user_id')
     
-    if not chat_groups_name or not user_id:
-        return jsonify({"error": "chat_groups_name and user_id are required"}), 400
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
     
-    conn = None
-    try:
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor()
-
-        # Create chat_groups
-        cursor.execute("""
-            INSERT INTO `chat_groups` (chat_groups_name, created_by)
-            VALUES (%s, %s)
-        """, (chat_groups_name, user_id))
-        
-        chat_groups_id = cursor.lastrowid
-        
-        # Add creator to chat_groups
-        cursor.execute("""
-            INSERT INTO user_chat_groups (user_id, chat_groups_id)
-            VALUES (%s, %s)
-        """, (user_id, chat_groups_id))
-        
-        # Add other members
-        for member_id in member_ids:
-            cursor.execute("""
-                INSERT INTO user_chat_groups (user_id, chat_groups_id)
-                VALUES (%s, %s)
-            """, (member_id, chat_groups_id))
-
-        conn.commit()
-        return jsonify({"message": "Group created", "chat_groups_id": chat_groups_id}), 201
-        
-    except mysql.connector.Error as err:
-        print(f"Database error: {err}")
-        return jsonify({"error": "Database error occurred"}), 500
-    finally:
-        if conn and conn.is_connected():
-            cursor.close()
-            conn.close()
-
-@app.route('/api/chat_groups/<int:chat_groups_id>/messages', methods=['GET'])
-def get_messages(chat_groups_id):
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor(dictionary=True)
         
+        # Verify user is participant
         cursor.execute("""
-            SELECT m.message_id, m.message, m.timestamp, m.user_id,
-                   u.first_name, u.last_name, u.username
-            FROM messagess m
-            JOIN users u ON m.user_id = u.user_id
-            WHERE m.chat_groups_id = %s
-            ORDER BY m.timestamp ASC
-        """, (chat_groups_id,))
+            SELECT 1 FROM chat_participants WHERE chat_id = %s AND user_id = %s
+        """, (chat_id, user_id))
+        
+        if not cursor.fetchone():
+            return jsonify({"error": "Access denied"}), 403
+        
+        # Get messages
+        cursor.execute("""
+            SELECT 
+                cm.message_id,
+                cm.message,
+                cm.sent_at,
+                cm.user_id,
+                u.username,
+                u.first_name,
+                u.last_name
+            FROM chat_messages cm
+            JOIN users u ON cm.user_id = u.user_id
+            WHERE cm.chat_id = %s
+            ORDER BY cm.sent_at ASC
+        """, (chat_id,))
         
         messages = cursor.fetchall()
-        return jsonify(messages), 200
         
-    except mysql.connector.Error as err:
-        print(f"Database error: {err}")
-        return jsonify({"error": "Database error occurred"}), 500
+        # Convert datetime to string
+        for msg in messages:
+            if msg.get('sent_at'):
+                msg['sent_at'] = msg['sent_at'].isoformat() if hasattr(msg['sent_at'], 'isoformat') else str(msg['sent_at'])
+        
+        return jsonify({"messages": messages}), 200
+        
+    except Exception as e:
+        print(f"Error in get_chat_messages: {e}")
+        return jsonify({"error": "Database error"}), 500
     finally:
-        if conn and conn.is_connected():
-            cursor.close()
+        if conn:
             conn.close()
 
-@app.route('/api/chat_groups/<int:chat_groups_id>/messages', methods=['POST'])
-def send_message(chat_groups_id):
+@app.route('/api/chats/<int:chat_id>/messages', methods=['POST'])
+def send_chat_message(chat_id):
+    """Send a message in a chat"""
     data = request.json
     user_id = data.get('user_id')
-    messages = data.get('message')
+    message = data.get('message', '').strip()
     
     if not user_id or not message:
-        return jsonify({"error": "user_id and messages are required"}), 400
-        
+        return jsonify({"error": "user_id and message required"}), 400
+    
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
         
+        # Verify user is participant
         cursor.execute("""
-            INSERT INTO messagess (chat_groups_id, user_id, message)
-            VALUES (%s, %s, %s)
-        """, (chat_groups_id, user_id, message))
+            SELECT 1 FROM chat_participants WHERE chat_id = %s AND user_id = %s
+        """, (chat_id, user_id))
         
+        if not cursor.fetchone():
+            return jsonify({"error": "Access denied"}), 403
+        
+        # Insert message
+        cursor.execute("""
+            INSERT INTO chat_messages (chat_id, user_id, message)
+            VALUES (%s, %s, %s)
+        """, (chat_id, user_id, message))
+        
+        message_id = cursor.lastrowid
         conn.commit()
         
-        # Get the created messages with user details
-        cursor = conn.cursor(dictionary=True)
+        # Get the created message with user details
         cursor.execute("""
-            SELECT m.message_id, m.message, m.timestamp, m.user_id,
-                   u.first_name, u.last_name, u.username
-            FROM messagess m
-            JOIN users u ON m.user_id = u.user_id
-            WHERE m.message_id = %s
-        """, (cursor.lastrowid,))
+            SELECT 
+                cm.message_id,
+                cm.message,
+                cm.sent_at,
+                cm.user_id,
+                u.username,
+                u.first_name,
+                u.last_name
+            FROM chat_messages cm
+            JOIN users u ON cm.user_id = u.user_id
+            WHERE cm.message_id = %s
+        """, (message_id,))
         
-        new_messages = cursor.fetchone()
-        return jsonify(new_message), 201
+        new_message = cursor.fetchone()
         
-    except mysql.connector.Error as err:
-        print(f"Database error: {err}")
-        return jsonify({"error": "Database error occurred"}), 500
+        # Convert datetime to string
+        if new_message.get('sent_at'):
+            new_message['sent_at'] = new_message['sent_at'].isoformat() if hasattr(new_message['sent_at'], 'isoformat') else str(new_message['sent_at'])
+        
+        return jsonify({"message": new_message}), 201
+        
+    except Exception as e:
+        print(f"Error in send_chat_message: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({"error": "Database error"}), 500
     finally:
-        if conn and conn.is_connected():
-            cursor.close()
-            conn.close()
-
-@app.route('/api/chat_groups/<int:chat_groups_id>/members', methods=['GET'])
-def get_chat_groups_members(chat_groups_id):
-    conn = None
-    try:
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
-        
-        cursor.execute("""
-            SELECT u.user_id, u.first_name, u.last_name, u.username
-            FROM user_chat_groups ug
-            JOIN users u ON ug.user_id = u.user_id
-            WHERE ug.chat_groups_id = %s
-        """, (chat_groups_id,))
-        
-        members = cursor.fetchall()
-        return jsonify(members), 200
-        
-    except mysql.connector.Error as err:
-        print(f"Database error: {err}")
-        return jsonify({"error": "Database error occurred"}), 500
-    finally:
-        if conn and conn.is_connected():
-            cursor.close()
+        if conn:
             conn.close()
 
 # Google Places API routes

@@ -18,46 +18,98 @@
   justify-content: flex-start;
 }
 
+/* Trip Selector Dropdown */
 .trip-selector {
   position: relative;
+  width: 250px;
 }
 
-.trip-selector select {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  padding: 0.75rem 3rem 0.75rem 1.25rem;
-  background: #1f1f23;
-  border: 1.5px solid #3f3f46;
-  border-radius: 8px;
-  color: #ffffff;
-  font-size: 1rem;
-  font-weight: 600;
+.dropdown-trigger {
+  background: #1a1a1a;
+  border: 1px solid #333333;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   cursor: pointer;
-  transition: all 0.2s ease;
-  letter-spacing: -0.025em;
-  min-width: 280px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 1rem center;
-  background-size: 16px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  user-select: none;
 }
 
-.trip-selector select:hover {
-  border-color: #52525b;
-  background-color: #27272a;
+.dropdown-trigger:hover {
+  background: #0f0f0f;
+  border-color: #ffffff;
 }
 
-.trip-selector select:focus {
-  outline: none;
-  border-color: #88BDF2;
-  box-shadow: 0 0 0 3px rgba(136, 189, 242, 0.1);
+.dropdown-trigger.open {
+  border-color: #ffffff;
 }
 
-.trip-selector select option {
-  background: #1f1f23;
+.dropdown-text {
+  font-size: 1.125rem;
+  font-weight: 500;
   color: #ffffff;
-  padding: 0.75rem;
+}
+
+.dropdown-arrow {
+  width: 20px;
+  height: 20px;
+  color: #ffffff;
+  transition: transform 0.2s ease;
+}
+
+.dropdown-arrow.rotated {
+  transform: rotate(180deg);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 16px);
+  left: 0;
+  width: 100%;
+  background: #2a2a2a;
+  border-radius: 12px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  overflow: hidden;
+  animation: dropdownSlide 0.2s ease;
+  padding: 8px;
+}
+
+@keyframes dropdownSlide {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dropdown-option {
+  padding: 0.75rem 1rem;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.125rem;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  border-radius: 8px;
+  margin: 4px;
+}
+
+.dropdown-option:hover,
+.dropdown-option.hovered {
+  background: #0f0f0f;
+  color: #ffffff;
+}
+
+.dropdown-option.selected {
+  background: #0a0a0a;
+  color: #ffffff;
+  font-weight: 600;
 }
 
 /* No Trip Selected */

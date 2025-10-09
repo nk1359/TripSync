@@ -6,6 +6,7 @@ import './styles/Home.css';
 import AddToCalendarModal from './AddToCalendarModal';
 import DateRangePicker from './DateRangePicker';
 import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft, FaChevronRight, FaTimes } from 'react-icons/fa';
+import heroBackground from '../assets/images/hero-background.jpg';
 
 const Home = () => {
   const { user } = useContext(AuthContext);
@@ -1427,7 +1428,7 @@ const Home = () => {
     <Layout>
       <div className="home-page">
         {viewMode === 'homepage' && (
-          <div className="hero-section">
+          <div className="hero-section" style={{backgroundImage: `linear-gradient(rgba(24, 24, 27, 0.7), rgba(24, 24, 27, 0.8)), url(${heroBackground})`}}>
             <div className="hero-content">
               <h1 className="hero-title">{user ? 'Discover Remarkable Places' : 'Plan your next adventure'}</h1>
               <p className="hero-subtitle">{user ? 'Find the perfect spots for your next adventure with friends' : 'Organize trips, collaborate with friends, and keep all your travel plans in one place'}</p>

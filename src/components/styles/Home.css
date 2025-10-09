@@ -9,8 +9,12 @@
 /* ===== Hero Section ===== */
 .hero-section {
   padding: 100px 1.5rem 6rem;
-  background: #18181b;
+  background: linear-gradient(rgba(24, 24, 27, 0.7), rgba(24, 24, 27, 0.8));
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   color: white;
+  position: relative;
 }
 
 .hero-content {
@@ -26,14 +30,16 @@
   letter-spacing: -0.025em;
   line-height: 1.1;
   color: #ffffff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .hero-subtitle {
   font-size: 1.125rem;
   font-weight: 300;
   margin-bottom: 2rem;
-  color: #a1a1aa;
+  color: #e4e4e7;
   line-height: 1.75;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .hero-actions {

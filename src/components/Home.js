@@ -6,7 +6,6 @@ import './styles/Home.css';
 import AddToCalendarModal from './AddToCalendarModal';
 import DateRangePicker from './DateRangePicker';
 import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft, FaChevronRight, FaTimes } from 'react-icons/fa';
-import heroBackground from '../assets/images/hero-background.jpg';
 
 const Home = () => {
   const { user } = useContext(AuthContext);
@@ -35,6 +34,15 @@ const Home = () => {
   });
   const [selectedPlace, setSelectedPlace] = useState(null);
 
+  // Hero slideshow state
+  const [currentHeroIndex, setCurrentHeroIndex] = useState(0);
+  const heroImages = [
+    '/hero-background.jpg',
+    '/ss1.jpg',
+    '/ss2.jpeg',
+    '/ss3.jpeg'
+  ];
+
   // Trips state
   const [trips, setTrips] = useState([]);
   const [showTripModal, setShowTripModal] = useState(false);
@@ -43,7 +51,34 @@ const Home = () => {
     description: '',
     memberIds: []
   });
+  const [tripFriends, setTripFriends] = useState([]); // Available friends to invite
+  const [selectedFriends, setSelectedFriends] = useState([]); // Selected friend IDs for this trip
   const [tripLocations, setTripLocations] = useState([]);
+  
+  // Fetch friends when trip modal opens
+  useEffect(() => {
+    if (showTripModal && user?.user_id) {
+      fetchFriendsForTrip();
+    }
+  }, [showTripModal, user]);
+  
+  const fetchFriendsForTrip = async () => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/friends/${user.user_id}`);
+      const data = await response.json();
+      setTripFriends(data.friends || []);
+    } catch (error) {
+      console.error('Error fetching friends:', error);
+    }
+  };
+  
+  const toggleFriendSelection = (friendId) => {
+    setSelectedFriends(prev => 
+      prev.includes(friendId) 
+        ? prev.filter(id => id !== friendId)
+        : [...prev, friendId]
+    );
+  };
   const [currentLocation, setCurrentLocation] = useState({
     city: '',
     state: '',
@@ -76,6 +111,15 @@ const Home = () => {
     'Hiking Trails', 'Bars & Nightlife', 'Coffee Shops', 'Gas Stations',
     'Hospitals', 'Schools', 'Libraries', 'Gyms', 'Salons', 'Banks'
   ];
+
+  // Hero slideshow auto-rotation
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentHeroIndex((prevIndex) => (prevIndex + 1) % heroImages.length);
+    }, 5000); // Change image every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [heroImages.length]);
 
   // Load homepage content efficiently - one section at a time
   useEffect(() => {
@@ -420,6 +464,11 @@ const Home = () => {
       return;
     }
 
+    // Auto-add current location if it has data and hasn't been added yet
+    if (currentLocation.city && currentLocation.state && currentLocation.startDate) {
+      await handleAddLocation();
+    }
+
     if (tripLocations.length === 0) {
       alert('Please add at least one location');
       return;
@@ -446,7 +495,8 @@ const Home = () => {
           description: tripForm.description,
           start_date: tripStartDate.toISOString().split('T')[0],
           end_date: tripEndDate.toISOString().split('T')[0],
-          created_by: user.user_id
+          created_by: user.user_id,
+          member_ids: selectedFriends  // Add selected friends to trip and group chat
         })
       });
 
@@ -456,6 +506,7 @@ const Home = () => {
         setShowTripModal(false);
         setTripForm({ tripName: '', description: '', memberIds: [] });
         setTripLocations([]);
+        setSelectedFriends([]);
         fetchTrips(); // Refresh trips
         alert('Trip created successfully!');
       } else {
@@ -1428,7 +1479,17 @@ const Home = () => {
     <Layout>
       <div className="home-page">
         {viewMode === 'homepage' && (
-          <div className="hero-section" style={{backgroundImage: `linear-gradient(rgba(24, 24, 27, 0.7), rgba(24, 24, 27, 0.8)), url(${heroBackground})`}}>
+          <div className="hero-section">
+            <div className="hero-slideshow">
+              {heroImages.map((image, index) => (
+                <div
+                  key={index}
+                  className={`hero-slide ${index === currentHeroIndex ? 'active' : ''}`}
+                  style={{backgroundImage: `url(${image})`}}
+                />
+              ))}
+            </div>
+            <div className="hero-overlay"></div>
             <div className="hero-content">
               <h1 className="hero-title">{user ? 'Discover Remarkable Places' : 'Plan your next adventure'}</h1>
               <p className="hero-subtitle">{user ? 'Find the perfect spots for your next adventure with friends' : 'Organize trips, collaborate with friends, and keep all your travel plans in one place'}</p>
@@ -1740,6 +1801,37 @@ const Home = () => {
                   rows="3"
                 />
               </div>
+
+              {/* Invite Friends Section */}
+              {tripFriends.length > 0 && (
+                <div className="trip-form-section">
+                  <label>Invite Friends (Optional)</label>
+                  <div className="friends-selection-grid">
+                    {tripFriends.map(friend => (
+                      <div 
+                        key={friend.user_id}
+                        className={`friend-chip ${selectedFriends.includes(friend.user_id) ? 'selected' : ''}`}
+                        onClick={() => toggleFriendSelection(friend.user_id)}
+                      >
+                        <div className="friend-chip-avatar">
+                          {friend.first_name.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="friend-chip-name">{friend.first_name} {friend.last_name}</span>
+                        {selectedFriends.includes(friend.user_id) && (
+                          <svg className="friend-check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                          </svg>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {selectedFriends.length > 0 && (
+                    <p className="selected-friends-count">
+                      {selectedFriends.length} friend{selectedFriends.length > 1 ? 's' : ''} selected
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Add Destinations Section */}
               <div className="trip-form-section">

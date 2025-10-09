@@ -12,12 +12,12 @@
   --warning-color: #f59e0b;
   
   /* Dark Backgrounds */
-  --bg-color: #0f0f23;
-  --bg-secondary: #1a1a2e;
-  --bg-tertiary: #16213e;
-  --card-bg: #1e1e3f;
-  --bg-hover: #2a2a4a;
-  --bg-glass: rgba(30, 30, 63, 0.8);
+  --bg-color: #18181b;
+  --bg-secondary: #27272a;
+  --bg-tertiary: #1f1f23;
+  --card-bg: #27272a;
+  --bg-hover: #3f3f46;
+  --bg-glass: rgba(39, 39, 42, 0.8);
   
   /* Text Colors */
   --heading-color: #f8fafc;
@@ -58,7 +58,7 @@
 
 body {
   font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background-color: var(--bg-color);
+  background-color: #18181b;
   color: var(--text-color);
   transition: background-color 0.3s;
 }
@@ -192,12 +192,16 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0 2rem;
-  background-color: #27272a;
-  position: sticky;
+  background: rgba(24, 24, 27, 0.7);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 900;
-  border-top: 1px solid #3f3f46;
-  border-bottom: 1px solid #3f3f46;
+  border-bottom: 1px solid rgba(63, 63, 70, 0.3);
+  transition: all 0.3s ease;
 }
 
 .left-area, .center-area, .right-area {
@@ -305,7 +309,7 @@ body {
 .app-title {
   font-size: 1.3rem;
   font-weight: 600;
-  color: var(--primary-color);
+  color: #ffffff;
 }
 
 .menu-toggle {
@@ -508,45 +512,59 @@ body {
 .profile-icon {
   position: relative;
   cursor: pointer;
-  transition: var(--transition);
+  transition: all 0.2s ease;
+  border-radius: 50%;
+  padding: 6px;
+}
+
+.profile-icon:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .user-avatar {
   width: 40px;
   height: 40px;
-  border-radius: 9999px;
-  background-color: var(--text-gray-500);
-  color: white;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #88BDF2, #6eaadb);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 500;
+  color: #000000;
+  font-weight: 700;
   font-size: 1rem;
 }
 
 .avatar-img {
   width: 40px;
   height: 40px;
-  border-radius: var(--border-radius-full);
+  border-radius: 50%;
   object-fit: cover;
 }
 
 /* Dropdown Menu */
 .dropdown-menu {
-  position: absolute;
-  top: 115%;
+  animation: dropdownSlide .15s cubic-bezier(.4, 0, .2, 1);
+  background: #27272a;
+  border-radius: 8px;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
   right: 0;
-  width: 220px;
-  background-color: #000000;
-  border: 1px solid var(--border-gray-800);
-  z-index: 1500;
   overflow: hidden;
-  animation: dropdown-fade var(--transition);
+  padding: .25rem;
+  position: absolute;
+  top: calc(100% + .5rem);
+  min-width: 160px;
+  width: fit-content;
+  z-index: 9999;
 }
 
-@keyframes dropdown-fade {
+@keyframes dropdownSlide {
   from { opacity: 0; transform: translateY(-10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* Simple Profile Dropdown */
+.simple-profile-dropdown {
+  min-width: 160px;
 }
 
 .dropdown-header {
@@ -559,8 +577,9 @@ body {
 .dropdown-item {
   display: flex;
   align-items: center;
+  gap: 12px;
   padding: 0.75rem 1rem;
-  color: var(--text-gray-500);
+  color: #e4e4e7;
   text-decoration: none;
   cursor: pointer;
   border: none;
@@ -569,17 +588,45 @@ body {
   text-align: left;
   font-size: 0.875rem;
   font-weight: 500;
-  transition: var(--transition);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.dropdown-item span {
+  white-space: nowrap;
 }
 
 .dropdown-item:hover, .dropdown-item:focus {
+  background-color: #3f3f46;
   color: #ffffff;
+}
+
+.logout-item {
+  color: #f87171;
+}
+
+.logout-item:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
 }
 
 .dropdown-icon {
   margin-right: 12px;
   width: 16px;
-  color: var(--secondary-text);
+  color: #a1a1aa;
+  transition: color 0.2s ease;
+}
+
+.dropdown-item:hover .dropdown-icon {
+  color: #ffffff;
+}
+
+.logout-item .dropdown-icon {
+  color: #fca5a5;
+}
+
+.logout-item:hover .dropdown-icon {
+  color: #ef4444;
 }
 
 /* Modal Overlay */
@@ -879,7 +926,12 @@ body.sidebar-open {
   }
   
   .dropdown-menu {
-    width: 200px;
+    min-width: 150px;
+    right: 0;
+  }
+  
+  .simple-profile-dropdown {
+    min-width: 150px;
   }
   
   .top-bar {
@@ -887,7 +939,7 @@ body.sidebar-open {
   }
   
   .notification-bell, .profile-icon {
-    position: static;
+    position: relative;
   }
   
   /* Hide navigation text on small screens */

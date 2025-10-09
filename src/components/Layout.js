@@ -16,6 +16,7 @@ import {
   FaUserFriends
 } from 'react-icons/fa';
 import axios from 'axios';
+import FloatingChat from './FloatingChat';
 import './styles/Layout.css';
 
 const Layout = ({ children }) => {
@@ -36,12 +37,8 @@ const Layout = ({ children }) => {
   const [friendRequests, setFriendRequests] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
 
-  // Friend search modal state
+  // Simple profile state
   const [showFriendSearchModal, setShowFriendSearchModal] = useState(false);
-  const [friendSearchQuery, setFriendSearchQuery] = useState('');
-  const [friendSearchResults, setFriendSearchResults] = useState([]);
-  const [friendSearchMessage, setFriendSearchMessage] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
 
   // Fetch pending friend requests once the user is loaded
   useEffect(() => {
@@ -105,7 +102,7 @@ const Layout = ({ children }) => {
   const navItems = user ? [
     { text: "Home", path: "/home" },
     { text: "Planner", path: "/planner" },
-    { text: "Chat", path: "/chats" }
+    { text: "Friends", path: "/friends" }
   ] : [
     { text: "Home", path: "/" }
   ];
@@ -121,6 +118,18 @@ const Layout = ({ children }) => {
       document.body.classList.remove('sidebar-open');
     }
   };
+
+  // Navigate to Friends page
+  const handleAddFriends = () => {
+    navigate('/friends');
+    setDropdownOpen(false);
+  };
+  
+  // Simple friend search state
+  const [friendSearchQuery, setFriendSearchQuery] = useState('');
+  const [friendSearchResults, setFriendSearchResults] = useState([]);
+  const [friendSearchMessage, setFriendSearchMessage] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
 
   // Function to perform a friend search
   const handleFriendSearch = () => {
@@ -357,18 +366,15 @@ const Layout = ({ children }) => {
                   )}
                   
                   {dropdownOpen && (
-                    <div className="dropdown-menu">
-                      <div className="dropdown-header">
-                        Hello, {user.first_name}
-                      </div>
+                    <div className="dropdown-menu simple-profile-dropdown">
                       <button 
-                        onClick={() => { setShowFriendSearchModal(true); setDropdownOpen(false); }} 
+                        onClick={handleAddFriends} 
                         className="dropdown-item"
                       >
                         <FaUserFriends className="dropdown-icon" />
                         <span>Add Friends</span>
                       </button>
-                      <button onClick={handleSignOut} className="dropdown-item">
+                      <button onClick={handleSignOut} className="dropdown-item logout-item">
                         <FaSignOutAlt className="dropdown-icon" />
                         <span>Sign Out</span>
                       </button>
@@ -401,76 +407,9 @@ const Layout = ({ children }) => {
         </div>
       </main>
 
-      {/* Friend Search Modal */}
-      {showFriendSearchModal && (
-        <div 
-          className="modal-overlay" 
-          onClick={() => setShowFriendSearchModal(false)}
-        >
-          <div 
-            className="modal-content" 
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="modal-header">
-              <h2>Find Friends</h2>
-              <button 
-                className="close-modal" 
-                onClick={() => setShowFriendSearchModal(false)}
-                aria-label="Close modal"
-              >
-                <FaTimes />
-              </button>
-            </div>
-            
-            <div className="search-container">
-              <div className="search-input-wrapper">
-                <input
-                  type="text"
-                  placeholder="Search by name or username..."
-                  value={friendSearchQuery}
-                  onChange={(e) => setFriendSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleFriendSearch()}
-                  className="friend-search-input"
-                />
-                <button
-                  onClick={handleFriendSearch}
-                  className="search-button"
-                  disabled={isSearching}
-                >
-                  {isSearching ? "Searching..." : <FaSearch />}
-                </button>
-              </div>
-              
-              {friendSearchMessage && (
-                <div className="search-message">{friendSearchMessage}</div>
-              )}
-            </div>
-            
-            <div className="search-results">
-              {friendSearchResults.length > 0 && (
-                <div className="results-list">
-                  {friendSearchResults.map((friend) => (
-                    <div key={friend.id} className="friend-result-item">
-                      <div className="friend-result-avatar">
-                        {friend.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="friend-result-details">
-                        <div className="friend-result-name">{friend.name}</div>
-                        {friend.username && (
-                          <div className="friend-result-username">@{friend.username}</div>
-                        )}
-                      </div>
-                      <div className="friend-result-actions">
-                        {getFriendActionButton(friend)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      
+      {/* Floating Chat - Available on all pages */}
+      {user && <FloatingChat />}
     </div>
   );
 };

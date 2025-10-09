@@ -7,6 +7,7 @@ import Home from './components/Home';
 import Chats from './components/Chats';
 import ChatRoom from './components/ChatRoom'; 
 import Planner from './components/Planner';
+import Friends from './components/Friends';
 
 function App() {
   const { user, loading } = useContext(AuthContext);
@@ -30,6 +31,7 @@ function App() {
         <Route path="/chats" element={user ? <Chats /> : <Navigate to="/" replace />} />
         <Route path="/chats/:groupId" element={user ? <ChatRoom /> : <Navigate to="/" replace />} />
         <Route path="/planner" element={user ? <Planner /> : <Navigate to="/" replace />} />
+        <Route path="/friends" element={user ? <Friends /> : <Navigate to="/" replace />} />
         
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

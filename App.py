@@ -310,7 +310,145 @@ def get_friends(user_id):
         """, (user_id, user_id, user_id, user_id, user_id, user_id))
         
         friends = cursor.fetchall()
-        return jsonify(friends), 200
+        return jsonify({"friends": friends}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+# Friend suggestions route
+@app.route('/api/friend_suggestions/<int:user_id>', methods=['GET'])
+def get_friend_suggestions(user_id):
+    """Get suggested users who are not friends yet"""
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get users who are not friends and no pending requests
+        cursor.execute("""
+            SELECT u.user_id as id, u.first_name, u.last_name, u.username
+            FROM users u
+            WHERE u.user_id != %s
+            AND u.user_id NOT IN (
+                SELECT CASE 
+                    WHEN f.user_id = %s THEN f.friend_id
+                    ELSE f.user_id
+                END
+                FROM friends f
+                WHERE (f.user_id = %s OR f.friend_id = %s)
+            )
+            LIMIT 10
+        """, (user_id, user_id, user_id, user_id))
+        
+        suggestions = cursor.fetchall()
+        return jsonify({"suggestions": suggestions}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+# Unified user search route
+@app.route('/api/users', methods=['GET'])
+def search_users_unified():
+    """Search users by name or username"""
+    search_query = request.args.get('search', '').strip()
+    current_user_id = request.args.get('current_user_id')
+    
+    if not current_user_id:
+        return jsonify({"error": "current_user_id is required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        if search_query:
+            # Search with query
+            cursor.execute("""
+                SELECT user_id as id, first_name, last_name, username,
+                       CONCAT(first_name, ' ', last_name) as name
+                FROM users
+                WHERE (username LIKE %s OR first_name LIKE %s OR last_name LIKE %s)
+                AND user_id != %s
+                LIMIT 20
+            """, (f'%{search_query}%', f'%{search_query}%', f'%{search_query}%', current_user_id))
+        else:
+            # Return empty if no search query
+            return jsonify({"users": []}), 200
+        
+        users = cursor.fetchall()
+        
+        # For each user, check friendship status
+        for user in users:
+            # Check if already friends
+            cursor.execute("""
+                SELECT id, status,
+                       CASE 
+                           WHEN user_id = %s THEN 'sent'
+                           WHEN friend_id = %s THEN 'received'
+                       END as request_direction
+                FROM friends 
+                WHERE (user_id = %s AND friend_id = %s) 
+                OR (user_id = %s AND friend_id = %s)
+            """, (current_user_id, current_user_id, current_user_id, user['id'], user['id'], current_user_id))
+            
+            friendship = cursor.fetchone()
+            
+            if friendship:
+                if friendship['status'] == 'accepted':
+                    user['friendship_status'] = 'friends'
+                elif friendship['request_direction'] == 'sent':
+                    user['friendship_status'] = 'request_sent'
+                elif friendship['request_direction'] == 'received':
+                    user['friendship_status'] = 'request_received'
+                    user['request_id'] = friendship['id']
+            else:
+                user['friendship_status'] = 'none'
+        
+        return jsonify({"users": users}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+# Remove friend route
+@app.route('/api/remove_friend', methods=['POST'])
+def remove_friend():
+    """Remove a friend"""
+    data = request.json
+    user_id = data.get('user_id')
+    friend_id = data.get('friend_id')
+    
+    if not user_id or not friend_id:
+        return jsonify({"error": "user_id and friend_id are required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        
+        # Delete the friendship (either direction)
+        cursor.execute("""
+            DELETE FROM friends 
+            WHERE (user_id = %s AND friend_id = %s) 
+            OR (user_id = %s AND friend_id = %s)
+        """, (user_id, friend_id, friend_id, user_id))
+        
+        conn.commit()
+        return jsonify({"message": "Friend removed successfully"}), 200
         
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
@@ -1591,6 +1729,7 @@ def create_trip():
     start_date = data.get('start_date')
     end_date = data.get('end_date')
     created_by = data.get('created_by')
+    member_ids = data.get('member_ids', [])  # List of friend user_ids to add to the trip
     
     if not all([trip_name, start_date, end_date, created_by]):
         return jsonify({"error": "Missing required fields"}), 400
@@ -1615,6 +1754,10 @@ def create_trip():
         """
         cursor.execute(participant_query, (trip_id, created_by))
         
+        # Add invited friends as trip participants
+        for member_id in member_ids:
+            cursor.execute(participant_query.replace("'owner'", "'member'"), (trip_id, member_id))
+        
         # Create group chat for the trip
         chat_query = """
         INSERT INTO group_chats (trip_id, chat_name)
@@ -1629,6 +1772,10 @@ def create_trip():
         VALUES (%s, %s)
         """
         cursor.execute(chat_participant_query, (chat_id, created_by))
+        
+        # Add invited friends to group chat
+        for member_id in member_ids:
+            cursor.execute(chat_participant_query, (chat_id, member_id))
         
         conn.commit()
         
@@ -1737,8 +1884,9 @@ def get_planner_items(trip_id):
         cursor.execute(query, (trip_id,))
         items = cursor.fetchall()
         
-        # Convert date and time objects to ISO format strings
+        # Convert date and time objects to ISO format strings and fetch photos from Google API
         for item in items:
+            
             if item.get('start_date'):
                 item['start_date'] = item['start_date'].strftime('%Y-%m-%d') if hasattr(item['start_date'], 'strftime') else str(item['start_date'])[:10]
             if item.get('end_date'):
@@ -1748,6 +1896,21 @@ def get_planner_items(trip_id):
                 item['start_time'] = str(item['start_time']) if item['start_time'] else None
             if item.get('end_time'):
                 item['end_time'] = str(item['end_time']) if item['end_time'] else None
+            
+            # Fetch photo from Google Places API if google_place_id exists
+            if item.get('google_place_id') and gmaps:
+                try:
+                    # Get basic place details which includes photos
+                    place_details = gmaps.place(place_id=item['google_place_id'])
+                    place_data = place_details.get('result', {})
+                    photos = place_data.get('photos')
+                    if photos and len(photos) > 0:
+                        photo_reference = photos[0].get('photo_reference')
+                        if photo_reference:
+                            item['photo_url'] = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
+                except Exception as e:
+                    print(f"Error fetching photo for {item.get('item_name')}: {e}")
+                    item['photo_url'] = None
         
         # Just return items immediately - distance calculation happens separately
         # Frontend will call /api/planner/calculate-distances separately if needed
@@ -2122,6 +2285,112 @@ def fix_planner_item_categories():
         
     except Exception as e:
         print(f"Error in fix_planner_item_categories: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/planner/<int:trip_id>/fix-place-ids', methods=['POST'])
+def fix_missing_place_ids(trip_id):
+    """Find and add Google Place IDs for items that don't have them"""
+    if not gmaps:
+        return jsonify({"error": "Google Maps API not configured"}), 500
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get all items without google_place_id
+        query = """
+        SELECT planner_id, item_name, location, item_type
+        FROM planner
+        WHERE trip_id = %s AND (google_place_id IS NULL OR google_place_id = '')
+        """
+        cursor.execute(query, (trip_id,))
+        items = cursor.fetchall()
+        
+        print(f"\n[FIX-PLACE-IDS] Found {len(items)} items without Google Place IDs")
+        
+        updated_count = 0
+        skipped_count = 0
+        
+        for item in items:
+            try:
+                item_name = item['item_name']
+                location = item.get('location', '')
+                
+                # Search for the place using name and location
+                search_query = f"{item_name} {location}" if location else item_name
+                print(f"[FIX-PLACE-IDS] Searching for: '{search_query}'")
+                
+                # Use places text search
+                results = gmaps.places(query=search_query)
+                
+                if results.get('results') and len(results['results']) > 0:
+                    # Get the first result (most relevant)
+                    place = results['results'][0]
+                    place_id = place.get('place_id')
+                    place_name = place.get('name', '')
+                    
+                    print(f"[FIX-PLACE-IDS] Found match: '{place_name}' (Place ID: {place_id})")
+                    
+                    # Update the planner item with the google_place_id
+                    update_query = """
+                    UPDATE planner
+                    SET google_place_id = %s
+                    WHERE planner_id = %s
+                    """
+                    cursor.execute(update_query, (place_id, item['planner_id']))
+                    
+                    # Also store the place in google_places table
+                    place_details = gmaps.place(place_id=place_id)
+                    place_data = place_details.get('result', {})
+                    
+                    place_query = """
+                    INSERT INTO google_places (place_id, name, address, latitude, longitude, place_type, rating)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                    name = VALUES(name), address = VALUES(address), 
+                    latitude = VALUES(latitude), longitude = VALUES(longitude),
+                    place_type = VALUES(place_type), rating = VALUES(rating)
+                    """
+                    
+                    geometry = place_data.get('geometry', {}).get('location', {})
+                    place_type = ', '.join(place_data.get('types', []))
+                    
+                    cursor.execute(place_query, (
+                        place_id,
+                        place_data.get('name', ''),
+                        place_data.get('formatted_address', ''),
+                        geometry.get('lat'),
+                        geometry.get('lng'),
+                        place_type,
+                        place_data.get('rating')
+                    ))
+                    
+                    updated_count += 1
+                    print(f"[FIX-PLACE-IDS] Updated '{item_name}' with Place ID: {place_id}")
+                else:
+                    skipped_count += 1
+                    print(f"[FIX-PLACE-IDS] No results found for '{item_name}'")
+                
+            except Exception as e:
+                skipped_count += 1
+                print(f"[FIX-PLACE-IDS] Error updating item {item['planner_id']}: {str(e)[:200]}")
+                continue
+        
+        conn.commit()
+        message = f"Updated {updated_count} items with Google Place IDs, skipped {skipped_count} items"
+        print(f"[FIX-PLACE-IDS] {message}")
+        return jsonify({"message": message, "updated": updated_count, "skipped": skipped_count})
+        
+    except Exception as e:
+        print(f"Error in fix_missing_place_ids: {e}")
         import traceback
         traceback.print_exc()
         if conn:

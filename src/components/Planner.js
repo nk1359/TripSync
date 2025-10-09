@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -6,8 +6,7 @@ import {
   FaMapMarkerAlt, 
   FaTrash, 
   FaSearch,
-  FaGripVertical,
-  FaChevronDown
+  FaGripVertical
 } from 'react-icons/fa';
 import Layout from './Layout';
 import './styles/Planner.css';
@@ -20,10 +19,7 @@ const Planner = () => {
   const [draggedItem, setDraggedItem] = useState(null);
   const [dragOverItem, setDragOverItem] = useState(null);
   const [dragPosition, setDragPosition] = useState(null); // 'above' or 'below'
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [hoveredTrip, setHoveredTrip] = useState(null);
-  
-  const dropdownRef = useRef(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const navigate = useNavigate();
   const currentUser = JSON.parse(localStorage.getItem('user')) || {};
@@ -38,21 +34,6 @@ const Planner = () => {
     
     fetchTrips();
   }, [currentUserId, navigate]);
-
-  // Handle click outside dropdown
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setDropdownOpen(false);
-        setHoveredTrip(null);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
 
   // Fetch planner items when trip is selected or when returning from search
   useEffect(() => {
@@ -113,28 +94,66 @@ const Planner = () => {
     };
   }, [selectedTrip]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (isDropdownOpen && !event.target.closest('.trip-selector')) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isDropdownOpen]);
+
   const fetchTrips = async () => {
     try {
       const response = await axios.get(`http://localhost:5000/api/trips/${currentUserId}`);
       console.log('Fetched trips:', response.data.trips);
-      setTrips(response.data.trips || []);
       
-      // If no trip is selected and there are trips, select the first one
-      if (!selectedTrip && response.data.trips && response.data.trips.length > 0) {
-        console.log('Auto-selecting first trip:', response.data.trips[0]);
-        setSelectedTrip(response.data.trips[0]);
+      // Sort trips by start date - most recent upcoming trip first
+      const sortedTrips = (response.data.trips || []).sort((a, b) => {
+        const dateA = new Date(a.start_date || a.startDate);
+        const dateB = new Date(b.start_date || b.startDate);
+        return dateA - dateB; // Ascending order (soonest trip first)
+      });
+      
+      setTrips(sortedTrips);
+      
+      // If no trip is selected and there are trips, select the first one (most upcoming)
+      if (!selectedTrip && sortedTrips.length > 0) {
+        console.log('Auto-selecting first trip:', sortedTrips[0]);
+        setSelectedTrip(sortedTrips[0]);
       }
     } catch (error) {
       console.error("Error fetching trips:", error.response?.data || error.message);
     }
   };
 
-  const fetchPlannerItems = async (skipDistanceCalc = false) => {
+  const fetchPlannerItems = async (skipDistanceCalc = false, skipPlaceIdFix = false) => {
     if (!selectedTrip) return;
     
     try {
       const response = await axios.get(`http://localhost:5000/api/planner/${selectedTrip.trip_id}`);
       setPlannerItems(response.data.items || []);
+      
+      // Automatically fix missing Google Place IDs (only on first load)
+      if (!skipPlaceIdFix) {
+        const itemsWithoutPlaceId = response.data.items?.filter(item => !item.google_place_id && item.item_type !== 'custom') || [];
+        if (itemsWithoutPlaceId.length > 0) {
+          console.log('[AUTO-FIX] Found items without Google Place IDs, fixing automatically...');
+          axios.post(`http://localhost:5000/api/planner/${selectedTrip.trip_id}/fix-place-ids`)
+            .then(res => {
+              console.log('[AUTO-FIX] Place IDs updated:', res.data);
+              // Refresh to get photos (skip auto-fix to avoid loop)
+              setTimeout(() => fetchPlannerItems(true, true), 500);
+            })
+            .catch(err => console.error('[AUTO-FIX] Error:', err));
+          return; // Exit early, will refresh after fix
+        }
+      }
       
       // Calculate distances in background if not skipping
       if (!skipDistanceCalc) {
@@ -143,7 +162,7 @@ const Planner = () => {
             .then(res => {
               console.log('[DISTANCE] Background calculation complete:', res.data);
               // Refresh items to get updated distances
-              fetchPlannerItems(true); // Skip distance calc on refresh
+              fetchPlannerItems(true, true); // Skip distance calc and place ID fix on refresh
             })
             .catch(err => {
               console.log('[DISTANCE] Calculation skipped or failed:', err.response?.data);
@@ -157,13 +176,6 @@ const Planner = () => {
 
   const handleTripChange = (trip) => {
     setSelectedTrip(trip);
-    setDropdownOpen(false);
-    setHoveredTrip(null);
-  };
-
-  const toggleDropdown = () => {
-    setDropdownOpen(!dropdownOpen);
-    setHoveredTrip(null);
   };
 
   const handleAddCustomLocation = async (day) => {
@@ -529,28 +541,37 @@ const Planner = () => {
     <Layout>
       <div className="planner-page">
         <div className="planner-header">
-          <div className="trip-selector" ref={dropdownRef}>
+          <div className="trip-selector">
+            {/* Custom Dropdown - Closed State */}
             <div 
-              className={`dropdown-trigger ${dropdownOpen ? 'open' : ''}`}
-              onClick={toggleDropdown}
+              className="dropdown-trigger"
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
             >
-              <span className="dropdown-text">
-                {selectedTrip ? (selectedTrip.trip_name || selectedTrip.group_name) : 'Select Trip'}
-              </span>
-              <FaChevronDown className={`dropdown-arrow ${dropdownOpen ? 'rotated' : ''}`} />
+              <span>{selectedTrip?.trip_name || selectedTrip?.group_name || 'Select a trip'}</span>
+              <svg 
+                className={`dropdown-chevron ${isDropdownOpen ? 'open' : ''}`}
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24" 
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
             </div>
-            
-            {dropdownOpen && (
+
+            {/* Custom Dropdown - Open State */}
+            {isDropdownOpen && (
               <div className="dropdown-menu">
-                {trips.map((trip, index) => (
+                {trips.map(trip => (
                   <div
                     key={trip.trip_id}
-                    className={`dropdown-option ${hoveredTrip === trip.trip_id ? 'hovered' : ''} ${selectedTrip?.trip_id === trip.trip_id ? 'selected' : ''}`}
-                    onClick={() => handleTripChange(trip)}
-                    onMouseEnter={() => setHoveredTrip(trip.trip_id)}
-                    onMouseLeave={() => setHoveredTrip(null)}
+                    className={`dropdown-item ${selectedTrip?.trip_id === trip.trip_id ? 'selected' : ''}`}
+                    onClick={() => {
+                      handleTripChange(trip);
+                      setIsDropdownOpen(false);
+                    }}
                   >
-                    {trip.trip_name || trip.group_name}
+                    <span>{trip.trip_name || trip.group_name}</span>
                   </div>
                 ))}
               </div>
@@ -637,6 +658,11 @@ const Planner = () => {
                               <div className="item-drag-handle">
                                 <FaGripVertical />
                               </div>
+                              {item.photo_url && (
+                                <div className="item-photo">
+                                  <img src={item.photo_url} alt={item.item_name} />
+                                </div>
+                              )}
                               <div className="item-content">
                                 <div className="item-header">
                                   <div className="item-title-section">

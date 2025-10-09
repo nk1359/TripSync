@@ -1,6 +1,6 @@
 /* ===== Home Page - Minimalist Dark Theme ===== */
 .home-page {
-  padding: 0;
+  padding: 80px 0 0 0;
   background: #18181b;
   min-height: 100vh;
   font-family: system-ui, -apple-system, sans-serif;
@@ -8,38 +8,94 @@
 
 /* ===== Hero Section ===== */
 .hero-section {
-  padding: 100px 1.5rem 6rem;
-  background: linear-gradient(rgba(24, 24, 27, 0.7), rgba(24, 24, 27, 0.8));
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
+  padding: 140px 1.5rem 6rem;
   color: white;
   position: relative;
+  height: 600px;
+  max-height: 70vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin-top: -80px;
+  padding-top: 120px;
+}
+
+.hero-slideshow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  display: flex;
+}
+
+.hero-slide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center 65%;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 1.5s ease-in-out;
+}
+
+.hero-slide.active {
+  opacity: 1;
+}
+
+.hero-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(rgba(24, 24, 27, 0.4), rgba(24, 24, 27, 0.5));
+  z-index: 1;
+  pointer-events: none;
+}
+
+.hero-section::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 200px;
+  background: linear-gradient(to bottom, transparent 0%, rgba(24, 24, 27, 0.3) 30%, rgba(24, 24, 27, 0.7) 70%, #18181b 100%);
+  pointer-events: none;
+  z-index: 1;
 }
 
 .hero-content {
   max-width: 48rem;
   margin: 0 auto;
   text-align: center;
+  position: relative;
+  z-index: 2;
 }
 
 .hero-title {
-  font-size: 3rem;
-  font-weight: 300;
+  font-size: 3.5rem;
+  font-weight: 700;
   margin-bottom: 1.5rem;
   letter-spacing: -0.025em;
   line-height: 1.1;
   color: #ffffff;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .hero-subtitle {
-  font-size: 1.125rem;
-  font-weight: 300;
+  font-size: 1.25rem;
+  font-weight: 500;
   margin-bottom: 2rem;
-  color: #e4e4e7;
+  color: #ffffff;
   line-height: 1.75;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .hero-actions {
@@ -1202,10 +1258,14 @@
 /* ===== Trips Dashboard ===== */
 .trips-dashboard {
   max-width: 75rem;
-  margin: 3rem auto;
+  margin: -100px auto 3rem;
   padding: 2.5rem;
-  background: linear-gradient(180deg, #1f1f23 0%, #18181b 100%);
+  background: linear-gradient(180deg, rgba(31, 31, 35, 0.95) 0%, #1f1f23 20%, #18181b 100%);
   border: 1px solid #3f3f46;
+  position: relative;
+  z-index: 2;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border-radius: 12px;
 }
 
@@ -1559,9 +1619,8 @@
 
 .trip-input:focus {
   outline: none;
-  border-color: #88BDF2;
-  background: #2a2a2e;
-  box-shadow: 0 0 0 3px rgba(136, 189, 242, 0.1);
+  border-color: #ffffff;
+  background: #1f1f23;
 }
 
 .trip-input:disabled {
@@ -1590,6 +1649,79 @@
   outline: none;
   border-color: #ffffff;
   background: #1f1f23;
+}
+
+/* Friends Selection Grid */
+.friends-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.friend-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  background: #27272a;
+  border: 1.5px solid #3f3f46;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.friend-chip:hover {
+  background: #2a2a2e;
+  border-color: #52525b;
+}
+
+.friend-chip.selected {
+  background: #3f3f46;
+  border-color: #ffffff;
+}
+
+.friend-chip-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.875rem;
+  flex-shrink: 0;
+}
+
+/* Colorful avatars for friend chips */
+.friend-chip:nth-child(6n+1) .friend-chip-avatar { background: linear-gradient(135deg, #88BDF2, #6eaadb); color: #000000; }
+.friend-chip:nth-child(6n+2) .friend-chip-avatar { background: linear-gradient(135deg, #ec4899, #db2777); }
+.friend-chip:nth-child(6n+3) .friend-chip-avatar { background: linear-gradient(135deg, #a78bfa, #8b5cf6); }
+.friend-chip:nth-child(6n+4) .friend-chip-avatar { background: linear-gradient(135deg, #10b981, #059669); }
+.friend-chip:nth-child(6n+5) .friend-chip-avatar { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.friend-chip:nth-child(6n) .friend-chip-avatar { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #000000; }
+
+.friend-chip-name {
+  flex: 1;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.friend-check-icon {
+  color: #10b981;
+  flex-shrink: 0;
+}
+
+.selected-friends-count {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: #a1a1aa;
+  font-weight: 500;
 }
 
 .location-input-row {

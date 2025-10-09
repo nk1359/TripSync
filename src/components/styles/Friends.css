@@ -1,0 +1,333 @@
+/* Friends Page */
+.friends-page {
+  min-height: 100vh;
+  background-color: #18181b;
+  padding: 6rem 1.5rem 2rem;
+}
+
+.friends-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.friends-header {
+  margin-bottom: 2rem;
+}
+
+.friends-header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 0.5rem;
+}
+
+.friends-header p {
+  font-size: 1rem;
+  color: #a1a1aa;
+}
+
+/* Tabs */
+.friends-tabs {
+  display: flex;
+  gap: 1rem;
+  border-bottom: 1px solid #3f3f46;
+  margin-bottom: 2rem;
+}
+
+.friends-tab {
+  padding: 1rem 1.5rem;
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.friends-tab:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.friends-tab.active {
+  color: #ffffff;
+  border-bottom-color: #ffffff;
+}
+
+/* Content Area */
+.friends-content {
+  min-height: 400px;
+}
+
+/* Friends Grid */
+.friends-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+/* Person Card */
+.person-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.person-card:hover {
+  background: #2a2a2e;
+  border-color: #52525b;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.person-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 1.125rem;
+  flex-shrink: 0;
+}
+
+/* Colorful avatars based on position */
+.person-card:nth-child(6n+1) .person-avatar { background: linear-gradient(135deg, #88BDF2, #6eaadb); color: #000000; }
+.person-card:nth-child(6n+2) .person-avatar { background: linear-gradient(135deg, #ec4899, #db2777); }
+.person-card:nth-child(6n+3) .person-avatar { background: linear-gradient(135deg, #a78bfa, #8b5cf6); }
+.person-card:nth-child(6n+4) .person-avatar { background: linear-gradient(135deg, #10b981, #059669); }
+.person-card:nth-child(6n+5) .person-avatar { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.person-card:nth-child(6n) .person-avatar { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #000000; }
+
+.person-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.person-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 0.25rem;
+}
+
+.person-username {
+  font-size: 0.875rem;
+  color: #a1a1aa;
+}
+
+.person-actions {
+  flex-shrink: 0;
+}
+
+/* Friend Action Buttons */
+.friend-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.add-btn {
+  background: rgba(136, 189, 242, 0.15);
+  color: #88BDF2;
+  border: 1px solid rgba(136, 189, 242, 0.3);
+}
+
+.add-btn:hover {
+  background: rgba(136, 189, 242, 0.25);
+  border-color: rgba(136, 189, 242, 0.5);
+  transform: translateY(-1px);
+}
+
+.remove-btn {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.remove-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  transform: translateY(-1px);
+}
+
+.friends-btn {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  cursor: default;
+}
+
+.pending-btn {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  cursor: default;
+}
+
+.accept-btn {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.accept-btn:hover {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.5);
+  transform: translateY(-1px);
+}
+
+/* Search Tab */
+.search-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.search-input-container {
+  display: flex;
+  gap: 0;
+  max-width: 600px;
+}
+
+.search-input {
+  flex: 1;
+  padding: 0.875rem 1.125rem;
+  border: 1.5px solid #3f3f46;
+  border-radius: 8px 0 0 8px;
+  border-right: none;
+  background: #27272a;
+  color: #ffffff;
+  font-size: 0.9375rem;
+  transition: all 0.2s ease;
+}
+
+.search-input::placeholder {
+  color: #6b7280;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #ffffff;
+  background: #1f1f23;
+}
+
+.search-input:focus + .search-btn {
+  border-color: #ffffff;
+}
+
+.search-btn {
+  padding: 0.875rem 1.5rem;
+  background: #27272a;
+  color: #a1a1aa;
+  border: 1.5px solid #3f3f46;
+  border-radius: 0 8px 8px 0;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 60px;
+}
+
+.search-btn:hover:not(:disabled) {
+  background: #2a2a2e;
+  color: #ffffff;
+}
+
+.search-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.search-message {
+  padding: 0.875rem 1rem;
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  color: #a1a1aa;
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+/* Empty State */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 4rem;
+  color: #3f3f46;
+  margin-bottom: 1.5rem;
+}
+
+.empty-state h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #e4e4e7;
+  margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+  font-size: 0.9375rem;
+  color: #a1a1aa;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .friends-page {
+    padding: 5.5rem 1rem 1.5rem;
+  }
+
+  .friends-header h1 {
+    font-size: 1.75rem;
+  }
+
+  .friends-tabs {
+    gap: 0.5rem;
+    overflow-x: auto;
+  }
+
+  .friends-tab {
+    padding: 0.875rem 1rem;
+    font-size: 0.875rem;
+    flex-shrink: 0;
+  }
+
+  .friends-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .search-input-container {
+    max-width: 100%;
+  }
+}
+

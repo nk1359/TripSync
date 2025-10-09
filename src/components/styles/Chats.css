@@ -3,6 +3,7 @@
   min-height: calc(100vh - var(--topbar-height));
   background: #18181b;
   padding: 2.5rem;
+  padding-top: calc(80px + 2.5rem);
   max-width: 75rem;
   margin: 0 auto;
 }

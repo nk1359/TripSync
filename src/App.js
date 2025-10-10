@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useContext } from 'react';
 import { AuthContext } from './components/AuthContext';
+import { ToastProvider } from './components/ToastContext';
 import Login from './components/Login';
 import Register from './components/Register';
 import Home from './components/Home';
@@ -22,20 +23,22 @@ function App() {
   }
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/home" element={<Home />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/chats" element={user ? <Chats /> : <Navigate to="/" replace />} />
-        <Route path="/chats/:groupId" element={user ? <ChatRoom /> : <Navigate to="/" replace />} />
-        <Route path="/planner" element={user ? <Planner /> : <Navigate to="/" replace />} />
-        <Route path="/friends" element={user ? <Friends /> : <Navigate to="/" replace />} />
-        
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Router>
+    <ToastProvider>
+      <Router>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/home" element={<Home />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/chats" element={user ? <Chats /> : <Navigate to="/" replace />} />
+          <Route path="/chats/:groupId" element={user ? <ChatRoom /> : <Navigate to="/" replace />} />
+          <Route path="/planner" element={user ? <Planner /> : <Navigate to="/" replace />} />
+          <Route path="/friends" element={user ? <Friends /> : <Navigate to="/" replace />} />
+          
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Router>
+    </ToastProvider>
   );
 }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   FaPlus, 
   FaMapMarkerAlt, 
@@ -22,10 +22,11 @@ const Planner = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const navigate = useNavigate();
+  const location = useLocation();
   const currentUser = JSON.parse(localStorage.getItem('user')) || {};
   const currentUserId = currentUser.user_id;
 
-  // Fetch trips and planner items on component mount
+  // Fetch trips and handle trip selection from URL
   useEffect(() => {
     if (!currentUserId) {
       navigate('/login');
@@ -122,9 +123,23 @@ const Planner = () => {
       
       setTrips(sortedTrips);
       
+      // Check for trip parameter in URL
+      const urlParams = new URLSearchParams(location.search);
+      const tripIdParam = urlParams.get('trip');
+      
+      if (tripIdParam) {
+        // Find and select the specific trip from URL
+        const tripToSelect = sortedTrips.find(t => t.trip_id === parseInt(tripIdParam));
+        if (tripToSelect) {
+          console.log('Selecting trip from URL:', tripToSelect);
+          setSelectedTrip(tripToSelect);
+          return;
+        }
+      }
+      
       // If no trip is selected and there are trips, select the first one (most upcoming)
       if (!selectedTrip && sortedTrips.length > 0) {
-        console.log('Auto-selecting first trip:', sortedTrips[0]);
+        console.log('Auto-selecting first trip (most upcoming):', sortedTrips[0]);
         setSelectedTrip(sortedTrips[0]);
       }
     } catch (error) {
@@ -621,30 +636,33 @@ const Planner = () => {
                     
                     <div className="day-items">
                       {dayItems.length > 0 ? (
-                        dayItems.map((item, itemIndex) => (
-                          <div 
-                            key={item.planner_id} 
-                            className="item-wrapper"
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, item)}
-                            onDragEnd={handleDragEnd}
-                          >
-                            {itemIndex > 0 && (
-                              <div className="travel-peek-box">
-                                <div className="travel-peek-content">
-                                  <svg className="travel-car-icon" width="24" height="24" viewBox="0 0 24 24" fill="white">
-                                    <path d="M16,6l3,4h2c1.11,0,2,0.89,2,2v3h-2c0,1.66-1.34,3-3,3s-3-1.34-3-3H9c0,1.66-1.34,3-3,3s-3-1.34-3-3H1v-3c0-1.11,0.89-2,2-2
-                                      l3-4H16 M10.5,7.5H6.75L4.86,10h5.64V7.5 M12,7.5V10h5.14l-1.89-2.5H12 M6,13.5c-0.83,0-1.5,0.67-1.5,1.5s0.67,1.5,1.5,1.5
-                                      s1.5-0.67,1.5-1.5S6.83,13.5,6,13.5 M18,13.5c-0.83,0-1.5,0.67-1.5,1.5s0.67,1.5,1.5,1.5s1.5-0.67,1.5-1.5S18.83,13.5,18,13.5z"/>
-                                  </svg>
-                                  <span className="travel-text">
-                                    {item.distance_from_previous && item.duration_from_previous && item.from_location
-                                      ? `${item.duration_from_previous} • ${item.distance_from_previous} from ${item.from_location}`
-                                      : 'Calculating distance...'}
-                                  </span>
+                        dayItems.map((item, itemIndex) => {
+                          // Find global index to show distance even for first item of new day
+                          const globalIndex = plannerItems.findIndex(i => i.planner_id === item.planner_id);
+                          const hasDistance = item.distance_from_previous && item.duration_from_previous && item.from_location;
+                          
+                          return (
+                            <div 
+                              key={item.planner_id} 
+                              className="item-wrapper"
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, item)}
+                              onDragEnd={handleDragEnd}
+                            >
+                              {globalIndex > 0 && hasDistance && (
+                                <div className="travel-peek-box">
+                                  <div className="travel-peek-content">
+                                    <svg className="travel-car-icon" width="24" height="24" viewBox="0 0 24 24" fill="white">
+                                      <path d="M16,6l3,4h2c1.11,0,2,0.89,2,2v3h-2c0,1.66-1.34,3-3,3s-3-1.34-3-3H9c0,1.66-1.34,3-3,3s-3-1.34-3-3H1v-3c0-1.11,0.89-2,2-2
+                                        l3-4H16 M10.5,7.5H6.75L4.86,10h5.64V7.5 M12,7.5V10h5.14l-1.89-2.5H12 M6,13.5c-0.83,0-1.5,0.67-1.5,1.5s0.67,1.5,1.5,1.5
+                                        s1.5-0.67,1.5-1.5S6.83,13.5,6,13.5 M18,13.5c-0.83,0-1.5,0.67-1.5,1.5s0.67,1.5,1.5,1.5s1.5-0.67,1.5-1.5S18.83,13.5,18,13.5z"/>
+                                    </svg>
+                                    <span className="travel-text">
+                                      {`${item.duration_from_previous} • ${item.distance_from_previous} from ${item.from_location}`}
+                                    </span>
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              )}
                             
                             <div 
                               className={`planner-item ${
@@ -720,7 +738,8 @@ const Planner = () => {
                               </div>
                             </div>
                           </div>
-                        ))
+                        );
+                        })
                       ) : (
                         <div className="no-items">
                           <p>No items planned for this day</p>

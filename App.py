@@ -193,8 +193,9 @@ def send_friend_request():
             VALUES (%s, %s, 'pending')
         """, (user_id, friend_id))
         
+        request_id = cursor.lastrowid
         conn.commit()
-        return jsonify({"message": "Friend request sent"}), 201
+        return jsonify({"message": "Friend request sent", "request_id": request_id}), 201
         
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
@@ -221,6 +222,55 @@ def get_friend_requests(user_id):
         
         requests = cursor.fetchall()
         return jsonify(requests), 200
+
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/friend_requests_sent/<int:user_id>', methods=['GET'])
+def get_friend_requests_sent(user_id):
+    """Get pending friend requests sent by this user"""
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get pending friend requests sent by this user
+        cursor.execute("""
+            SELECT f.id, f.friend_id, u.first_name, u.last_name, u.username
+            FROM friends f
+            JOIN users u ON f.friend_id = u.user_id
+            WHERE f.user_id = %s AND f.status = 'pending'
+        """, (user_id,))
+        
+        requests = cursor.fetchall()
+        return jsonify(requests), 200
+
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/cancel_friend_request/<int:request_id>', methods=['POST'])
+def cancel_friend_request(request_id):
+    """Cancel a friend request that was sent"""
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+
+        # Delete the friend request
+        cursor.execute("DELETE FROM friends WHERE id = %s AND status = 'pending'", (request_id,))
+        
+        conn.commit()
+        return jsonify({"message": "Friend request cancelled"}), 200
 
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
@@ -2342,6 +2392,828 @@ def remove_trip_member(trip_id, member_id):
             cursor.close()
             conn.close()
 
+# ===== TRIP MEMBER REQUEST ROUTES =====
+
+@app.route('/api/trips/<int:trip_id>/member-requests', methods=['POST'])
+def request_add_trip_member(trip_id):
+    """Request to add a friend to a trip (any member can request)"""
+    data = request.json
+    requester_id = data.get('requester_id')  # Person making the request
+    friend_id = data.get('friend_id')  # Person to be added
+    
+    if not requester_id or not friend_id:
+        return jsonify({"error": "requester_id and friend_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if requester is a member of the trip
+        cursor.execute("""
+            SELECT role FROM trip_participants
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, requester_id))
+        
+        if not cursor.fetchone():
+            return jsonify({"error": "You must be a trip member to request additions"}), 403
+        
+        # Check if friend is already in the trip
+        cursor.execute("""
+            SELECT 1 FROM trip_participants
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, friend_id))
+        
+        if cursor.fetchone():
+            return jsonify({"error": "User is already a member of this trip"}), 400
+        
+        # Check if request already exists
+        cursor.execute("""
+            SELECT id FROM trip_member_requests
+            WHERE trip_id = %s AND friend_id = %s AND status = 'pending'
+        """, (trip_id, friend_id))
+        
+        if cursor.fetchone():
+            return jsonify({"error": "A pending request already exists for this user"}), 400
+        
+        # Check if requester is owner or admin
+        cursor.execute("""
+            SELECT role FROM trip_participants
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, requester_id))
+        
+        requester_role = cursor.fetchone()
+        is_owner_or_admin = requester_role and requester_role['role'] in ['owner', 'admin']
+        
+        # Create the request
+        # If requester is owner/admin, auto-approve owner side
+        cursor.execute("""
+            INSERT INTO trip_member_requests (trip_id, requester_id, friend_id, status, owner_approved, friend_accepted)
+            VALUES (%s, %s, %s, 'pending', %s, FALSE)
+        """, (trip_id, requester_id, friend_id, is_owner_or_admin))
+        
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Request sent to trip owner"}), 201
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/trips/<int:trip_id>/member-requests', methods=['GET'])
+def get_trip_member_requests(trip_id):
+    """Get all pending member requests for a trip (requests from non-owners that need owner approval)"""
+    user_id = request.args.get('user_id')
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if user is owner or admin
+        cursor.execute("""
+            SELECT role FROM trip_participants
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, user_id))
+        
+        user_role = cursor.fetchone()
+        if not user_role or user_role['role'] not in ['owner', 'admin']:
+            return jsonify({"error": "Only owners and admins can view requests"}), 403
+        
+        # Get pending requests ONLY from non-owners/non-admins (actual requests needing approval)
+        # Invitations sent by owners/admins go to the friend, not shown here
+        cursor.execute("""
+            SELECT 
+                tmr.id as request_id,
+                tmr.requester_id,
+                tmr.friend_id,
+                tmr.created_at,
+                u1.first_name as requester_first_name,
+                u1.last_name as requester_last_name,
+                u1.username as requester_username,
+                u2.first_name as friend_first_name,
+                u2.last_name as friend_last_name,
+                u2.username as friend_username,
+                tp.role as requester_role
+            FROM trip_member_requests tmr
+            JOIN users u1 ON tmr.requester_id = u1.user_id
+            JOIN users u2 ON tmr.friend_id = u2.user_id
+            LEFT JOIN trip_participants tp ON tmr.trip_id = tp.trip_id AND tmr.requester_id = tp.user_id
+            WHERE tmr.trip_id = %s 
+              AND tmr.status = 'pending'
+              AND (tp.role IS NULL OR tp.role NOT IN ('owner', 'admin'))
+            ORDER BY tmr.created_at DESC
+        """, (trip_id,))
+        
+        requests = cursor.fetchall()
+        
+        return jsonify({"requests": requests}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/trips/<int:trip_id>/sent-invitations', methods=['GET'])
+def get_sent_invitations(trip_id):
+    """Get all pending invitations sent by owners/admins for this trip"""
+    user_id = request.args.get('user_id')
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if user is a member of the trip
+        cursor.execute("""
+            SELECT role FROM trip_participants
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, user_id))
+        
+        if not cursor.fetchone():
+            return jsonify({"error": "You must be a trip member to view invitations"}), 403
+        
+        # Get pending invitations sent by owners/admins (these are pending friend acceptances)
+        cursor.execute("""
+            SELECT 
+                tmr.id as invitation_id,
+                tmr.requester_id,
+                tmr.friend_id,
+                tmr.created_at,
+                u.first_name,
+                u.last_name,
+                u.username,
+                tp.role as requester_role
+            FROM trip_member_requests tmr
+            JOIN users u ON tmr.friend_id = u.user_id
+            LEFT JOIN trip_participants tp ON tmr.trip_id = tp.trip_id AND tmr.requester_id = tp.user_id
+            WHERE tmr.trip_id = %s 
+              AND tmr.status = 'pending'
+              AND tp.role IN ('owner', 'admin')
+            ORDER BY tmr.created_at DESC
+        """, (trip_id,))
+        
+        invitations = cursor.fetchall()
+        
+        return jsonify({"invitations": invitations}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/trips/<int:trip_id>/my-requests', methods=['GET'])
+def get_my_trip_requests(trip_id):
+    """Get pending requests that I (the current user) have made for this trip"""
+    user_id = request.args.get('user_id')
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if user is a member of the trip
+        cursor.execute("""
+            SELECT 1 FROM trip_participants
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, user_id))
+        
+        if not cursor.fetchone():
+            return jsonify({"error": "You must be a trip member to view your requests"}), 403
+        
+        # Get pending requests made by this user
+        cursor.execute("""
+            SELECT 
+                tmr.id as request_id,
+                tmr.friend_id,
+                tmr.created_at,
+                tmr.owner_approved,
+                tmr.friend_accepted,
+                u.first_name,
+                u.last_name,
+                u.username
+            FROM trip_member_requests tmr
+            JOIN users u ON tmr.friend_id = u.user_id
+            WHERE tmr.trip_id = %s 
+              AND tmr.requester_id = %s
+              AND tmr.status = 'pending'
+            ORDER BY tmr.created_at DESC
+        """, (trip_id, user_id))
+        
+        requests = cursor.fetchall()
+        
+        return jsonify({"requests": requests}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/trips/<int:trip_id>/member-requests/<int:request_id>/approve', methods=['POST'])
+def approve_trip_member_request(trip_id, request_id):
+    """Approve a member addition request (owner/admin only)"""
+    data = request.json
+    user_id = data.get('user_id')  # Person approving
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if user is owner or admin
+        cursor.execute("""
+            SELECT role FROM trip_participants
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, user_id))
+        
+        user_role = cursor.fetchone()
+        if not user_role or user_role['role'] not in ['owner', 'admin']:
+            return jsonify({"error": "Only owners and admins can approve requests"}), 403
+        
+        # Get request details
+        cursor.execute("""
+            SELECT friend_id FROM trip_member_requests
+            WHERE id = %s AND trip_id = %s AND status = 'pending'
+        """, (request_id, trip_id))
+        
+        request_data = cursor.fetchone()
+        if not request_data:
+            return jsonify({"error": "Request not found or already processed"}), 404
+        
+        friend_id = request_data['friend_id']
+        
+        # Mark as owner approved
+        cursor.execute("""
+            UPDATE trip_member_requests
+            SET owner_approved = TRUE, approved_by = %s, updated_at = NOW()
+            WHERE id = %s
+        """, (user_id, request_id))
+        
+        # Check if friend has also accepted
+        cursor.execute("""
+            SELECT friend_accepted FROM trip_member_requests
+            WHERE id = %s
+        """, (request_id,))
+        
+        request_status = cursor.fetchone()
+        
+        # If both have approved, add member to trip
+        if request_status and request_status['friend_accepted']:
+            # Add member to trip
+            cursor.execute("""
+                INSERT INTO trip_participants (trip_id, user_id, role)
+                VALUES (%s, %s, 'member')
+            """, (trip_id, friend_id))
+            
+            # Add member to trip's group chat
+            cursor.execute("""
+                SELECT chat_id FROM group_chats WHERE trip_id = %s
+            """, (trip_id,))
+            
+            chat = cursor.fetchone()
+            if chat:
+                cursor.execute("""
+                    INSERT INTO chat_participants (chat_id, user_id)
+                    VALUES (%s, %s)
+                """, (chat['chat_id'], friend_id))
+            
+            # Update request status to approved
+            cursor.execute("""
+                UPDATE trip_member_requests
+                SET status = 'approved'
+                WHERE id = %s
+            """, (request_id,))
+        
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Request approved and member added"}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/trips/<int:trip_id>/member-requests/<int:request_id>/reject', methods=['POST'])
+def reject_trip_member_request(trip_id, request_id):
+    """Reject a member addition request (owner/admin only)"""
+    data = request.json
+    user_id = data.get('user_id')  # Person rejecting
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if user is owner or admin
+        cursor.execute("""
+            SELECT role FROM trip_participants
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, user_id))
+        
+        user_role = cursor.fetchone()
+        if not user_role or user_role['role'] not in ['owner', 'admin']:
+            return jsonify({"error": "Only owners and admins can reject requests"}), 403
+        
+        # Update request status
+        cursor.execute("""
+            UPDATE trip_member_requests
+            SET status = 'rejected', approved_by = %s, updated_at = NOW()
+            WHERE id = %s AND trip_id = %s AND status = 'pending'
+        """, (user_id, request_id, trip_id))
+        
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Request not found or already processed"}), 404
+        
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Request rejected"}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+# ===== TRIP INVITATION ROUTES (for invited friends to accept/decline) =====
+
+@app.route('/api/users/<int:user_id>/trip-invitations', methods=['GET'])
+def get_user_trip_invitations(user_id):
+    """Get all pending trip invitations for a user"""
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get invitations where this user is the friend_id (invited person)
+        cursor.execute("""
+            SELECT 
+                tmr.id as invitation_id,
+                tmr.trip_id,
+                tmr.requester_id,
+                tmr.created_at,
+                t.trip_name,
+                t.description,
+                t.start_date,
+                t.end_date,
+                u.first_name as inviter_first_name,
+                u.last_name as inviter_last_name,
+                u.username as inviter_username
+            FROM trip_member_requests tmr
+            JOIN trips t ON tmr.trip_id = t.trip_id
+            JOIN users u ON tmr.requester_id = u.user_id
+            WHERE tmr.friend_id = %s AND tmr.status = 'pending'
+            ORDER BY tmr.created_at DESC
+        """, (user_id,))
+        
+        invitations = cursor.fetchall()
+        
+        return jsonify({"invitations": invitations}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/trip-invitations/<int:invitation_id>/accept', methods=['POST'])
+def accept_trip_invitation(invitation_id):
+    """Accept a trip invitation (invited friend accepts)"""
+    data = request.json
+    user_id = data.get('user_id')  # Person accepting (should be friend_id)
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get invitation details and verify user is the invited person
+        cursor.execute("""
+            SELECT trip_id, friend_id FROM trip_member_requests
+            WHERE id = %s AND status = 'pending'
+        """, (invitation_id,))
+        
+        invitation = cursor.fetchone()
+        if not invitation:
+            return jsonify({"error": "Invitation not found or already processed"}), 404
+        
+        if invitation['friend_id'] != user_id:
+            return jsonify({"error": "You are not authorized to accept this invitation"}), 403
+        
+        trip_id = invitation['trip_id']
+        
+        # Mark as friend accepted
+        cursor.execute("""
+            UPDATE trip_member_requests
+            SET friend_accepted = TRUE, updated_at = NOW()
+            WHERE id = %s
+        """, (invitation_id,))
+        
+        # Check if owner has also approved
+        cursor.execute("""
+            SELECT owner_approved FROM trip_member_requests
+            WHERE id = %s
+        """, (invitation_id,))
+        
+        request_status = cursor.fetchone()
+        
+        # If both have approved, add member to trip
+        if request_status and request_status['owner_approved']:
+            # Add user to trip
+            cursor.execute("""
+                INSERT INTO trip_participants (trip_id, user_id, role)
+                VALUES (%s, %s, 'member')
+            """, (trip_id, user_id))
+            
+            # Add user to trip's group chat
+            cursor.execute("""
+                SELECT chat_id FROM group_chats WHERE trip_id = %s
+            """, (trip_id,))
+            
+            chat = cursor.fetchone()
+            if chat:
+                cursor.execute("""
+                    INSERT INTO chat_participants (chat_id, user_id)
+                    VALUES (%s, %s)
+                """, (chat['chat_id'], user_id))
+            
+            # Update invitation status to approved
+            cursor.execute("""
+                UPDATE trip_member_requests
+                SET status = 'approved', approved_by = %s
+                WHERE id = %s
+            """, (user_id, invitation_id))
+        
+        conn.commit()
+        
+        # Return appropriate message
+        if request_status and request_status['owner_approved']:
+            return jsonify({"success": True, "message": "Invitation accepted! You've been added to the trip.", "added": True}), 200
+        else:
+            return jsonify({"success": True, "message": "Invitation accepted! Waiting for trip owner approval.", "added": False}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/trip-invitations/<int:invitation_id>/decline', methods=['POST'])
+def decline_trip_invitation(invitation_id):
+    """Decline a trip invitation (invited friend declines)"""
+    data = request.json
+    user_id = data.get('user_id')  # Person declining (should be friend_id)
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Verify user is the invited person
+        cursor.execute("""
+            SELECT friend_id FROM trip_member_requests
+            WHERE id = %s AND status = 'pending'
+        """, (invitation_id,))
+        
+        invitation = cursor.fetchone()
+        if not invitation:
+            return jsonify({"error": "Invitation not found or already processed"}), 404
+        
+        if invitation['friend_id'] != user_id:
+            return jsonify({"error": "You are not authorized to decline this invitation"}), 403
+        
+        # Update invitation status
+        cursor.execute("""
+            UPDATE trip_member_requests
+            SET status = 'rejected', approved_by = %s, updated_at = NOW()
+            WHERE id = %s
+        """, (user_id, invitation_id))
+        
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Invitation declined"}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+# ===== CHAT MEMBER REQUEST ROUTES =====
+
+@app.route('/api/chats/<int:chat_id>/member-requests', methods=['POST'])
+def request_add_chat_member(chat_id):
+    """Request to add a friend to a chat (any chat participant can request, owner must approve)"""
+    data = request.json
+    requester_id = data.get('requester_id')  # Person making the request
+    friend_id = data.get('friend_id')  # Person to be added
+    
+    if not requester_id or not friend_id:
+        return jsonify({"error": "requester_id and friend_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if requester is a participant of the chat
+        cursor.execute("""
+            SELECT 1 FROM chat_participants
+            WHERE chat_id = %s AND user_id = %s
+        """, (chat_id, requester_id))
+        
+        if not cursor.fetchone():
+            return jsonify({"error": "You must be a chat participant to request additions"}), 403
+        
+        # Check if friend is already in the chat
+        cursor.execute("""
+            SELECT 1 FROM chat_participants
+            WHERE chat_id = %s AND user_id = %s
+        """, (chat_id, friend_id))
+        
+        if cursor.fetchone():
+            return jsonify({"error": "User is already a member of this chat"}), 400
+        
+        # Check if request already exists
+        cursor.execute("""
+            SELECT id FROM chat_member_requests
+            WHERE chat_id = %s AND friend_id = %s AND status = 'pending'
+        """, (chat_id, friend_id))
+        
+        if cursor.fetchone():
+            return jsonify({"error": "A pending request already exists for this user"}), 400
+        
+        # Create the request
+        cursor.execute("""
+            INSERT INTO chat_member_requests (chat_id, requester_id, friend_id, status)
+            VALUES (%s, %s, %s, 'pending')
+        """, (chat_id, requester_id, friend_id))
+        
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Request sent to chat owner"}), 201
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/chats/<int:chat_id>/member-requests', methods=['GET'])
+def get_chat_member_requests(chat_id):
+    """Get all pending member requests for a chat (owner/admin only for trip chats)"""
+    user_id = request.args.get('user_id')
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get chat details to check if it's a trip chat
+        cursor.execute("""
+            SELECT trip_id FROM group_chats WHERE chat_id = %s
+        """, (chat_id,))
+        
+        chat_info = cursor.fetchone()
+        
+        # If it's a trip chat, check if user is owner or admin
+        if chat_info and chat_info['trip_id']:
+            cursor.execute("""
+                SELECT role FROM trip_participants
+                WHERE trip_id = %s AND user_id = %s
+            """, (chat_info['trip_id'], user_id))
+            
+            user_role = cursor.fetchone()
+            if not user_role or user_role['role'] not in ['owner', 'admin']:
+                return jsonify({"error": "Only trip owners and admins can view requests"}), 403
+        else:
+            # For non-trip chats, any participant can view
+            cursor.execute("""
+                SELECT 1 FROM chat_participants
+                WHERE chat_id = %s AND user_id = %s
+            """, (chat_id, user_id))
+            
+            if not cursor.fetchone():
+                return jsonify({"error": "You must be a chat participant to view requests"}), 403
+        
+        # Get all pending requests
+        cursor.execute("""
+            SELECT 
+                cmr.id as request_id,
+                cmr.requester_id,
+                cmr.friend_id,
+                cmr.created_at,
+                u1.first_name as requester_first_name,
+                u1.last_name as requester_last_name,
+                u1.username as requester_username,
+                u2.first_name as friend_first_name,
+                u2.last_name as friend_last_name,
+                u2.username as friend_username
+            FROM chat_member_requests cmr
+            JOIN users u1 ON cmr.requester_id = u1.user_id
+            JOIN users u2 ON cmr.friend_id = u2.user_id
+            WHERE cmr.chat_id = %s AND cmr.status = 'pending'
+            ORDER BY cmr.created_at DESC
+        """, (chat_id,))
+        
+        requests = cursor.fetchall()
+        
+        return jsonify({"requests": requests}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/chats/<int:chat_id>/member-requests/<int:request_id>/approve', methods=['POST'])
+def approve_chat_member_request(chat_id, request_id):
+    """Approve a chat member addition request (owner/admin only for trip chats)"""
+    data = request.json
+    user_id = data.get('user_id')  # Person approving
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get chat details to check if it's a trip chat
+        cursor.execute("""
+            SELECT trip_id FROM group_chats WHERE chat_id = %s
+        """, (chat_id,))
+        
+        chat_info = cursor.fetchone()
+        
+        # If it's a trip chat, check if user is owner or admin
+        if chat_info and chat_info['trip_id']:
+            cursor.execute("""
+                SELECT role FROM trip_participants
+                WHERE trip_id = %s AND user_id = %s
+            """, (chat_info['trip_id'], user_id))
+            
+            user_role = cursor.fetchone()
+            if not user_role or user_role['role'] not in ['owner', 'admin']:
+                return jsonify({"error": "Only trip owners and admins can approve requests"}), 403
+        
+        # Get request details
+        cursor.execute("""
+            SELECT friend_id FROM chat_member_requests
+            WHERE id = %s AND chat_id = %s AND status = 'pending'
+        """, (request_id, chat_id))
+        
+        request_data = cursor.fetchone()
+        if not request_data:
+            return jsonify({"error": "Request not found or already processed"}), 404
+        
+        friend_id = request_data['friend_id']
+        
+        # Add member to chat
+        cursor.execute("""
+            INSERT INTO chat_participants (chat_id, user_id)
+            VALUES (%s, %s)
+        """, (chat_id, friend_id))
+        
+        # If this is a trip chat, also add to trip
+        if chat_info and chat_info['trip_id']:
+            # Check if already in trip
+            cursor.execute("""
+                SELECT 1 FROM trip_participants
+                WHERE trip_id = %s AND user_id = %s
+            """, (chat_info['trip_id'], friend_id))
+            
+            if not cursor.fetchone():
+                cursor.execute("""
+                    INSERT INTO trip_participants (trip_id, user_id, role)
+                    VALUES (%s, %s, 'member')
+                """, (chat_info['trip_id'], friend_id))
+        
+        # Update request status
+        cursor.execute("""
+            UPDATE chat_member_requests
+            SET status = 'approved', approved_by = %s, updated_at = NOW()
+            WHERE id = %s
+        """, (user_id, request_id))
+        
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Request approved and member added"}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/chats/<int:chat_id>/member-requests/<int:request_id>/reject', methods=['POST'])
+def reject_chat_member_request(chat_id, request_id):
+    """Reject a chat member addition request (owner/admin only for trip chats)"""
+    data = request.json
+    user_id = data.get('user_id')  # Person rejecting
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get chat details to check if it's a trip chat
+        cursor.execute("""
+            SELECT trip_id FROM group_chats WHERE chat_id = %s
+        """, (chat_id,))
+        
+        chat_info = cursor.fetchone()
+        
+        # If it's a trip chat, check if user is owner or admin
+        if chat_info and chat_info['trip_id']:
+            cursor.execute("""
+                SELECT role FROM trip_participants
+                WHERE trip_id = %s AND user_id = %s
+            """, (chat_info['trip_id'], user_id))
+            
+            user_role = cursor.fetchone()
+            if not user_role or user_role['role'] not in ['owner', 'admin']:
+                return jsonify({"error": "Only trip owners and admins can reject requests"}), 403
+        
+        # Update request status
+        cursor.execute("""
+            UPDATE chat_member_requests
+            SET status = 'rejected', approved_by = %s, updated_at = NOW()
+            WHERE id = %s AND chat_id = %s AND status = 'pending'
+        """, (user_id, request_id, chat_id))
+        
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Request not found or already processed"}), 404
+        
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Request rejected"}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
 @app.route('/api/trips/<int:trip_id>', methods=['DELETE'])
 def delete_trip(trip_id):
     """Delete a trip (only owner can delete)"""
@@ -3173,7 +4045,59 @@ def get_notifications(user_id):
         """, (user_id,))
         notifications.extend(cursor.fetchall())
         
-        # 2. Trip Addition Notifications
+        # 2. Trip Invitations (for friends being invited)
+        cursor.execute("""
+            SELECT 
+                'trip_invitation' as type,
+                tmr.id as notification_id,
+                u.first_name,
+                u.last_name,
+                u.username,
+                tmr.requester_id as sender_id,
+                tmr.trip_id,
+                NULL as chat_id,
+                t.trip_name as message_preview,
+                t.description as trip_description,
+                tmr.created_at as timestamp,
+                tmr.owner_approved,
+                tmr.friend_accepted
+            FROM trip_member_requests tmr
+            JOIN users u ON tmr.requester_id = u.user_id
+            JOIN trips t ON tmr.trip_id = t.trip_id
+            WHERE tmr.friend_id = %s AND tmr.status = 'pending'
+        """, (user_id,))
+        notifications.extend(cursor.fetchall())
+        
+        # 2b. Member Addition Requests (for trip owners/admins to approve)
+        cursor.execute("""
+            SELECT 
+                'member_request' as type,
+                tmr.id as notification_id,
+                u1.first_name,
+                u1.last_name,
+                u1.username,
+                tmr.requester_id as sender_id,
+                tmr.trip_id,
+                NULL as chat_id,
+                CONCAT(u2.first_name, ' ', u2.last_name, ' requested by ', u1.first_name) as message_preview,
+                t.trip_name,
+                u2.first_name as friend_first_name,
+                u2.last_name as friend_last_name,
+                tmr.created_at as timestamp
+            FROM trip_member_requests tmr
+            JOIN users u1 ON tmr.requester_id = u1.user_id
+            JOIN users u2 ON tmr.friend_id = u2.user_id
+            JOIN trips t ON tmr.trip_id = t.trip_id
+            JOIN trip_participants tp ON tmr.trip_id = tp.trip_id
+            WHERE tp.user_id = %s 
+              AND tp.role IN ('owner', 'admin')
+              AND tmr.status = 'pending'
+              AND NOT tmr.owner_approved
+              AND tmr.requester_id != %s
+        """, (user_id, user_id))
+        notifications.extend(cursor.fetchall())
+        
+        # 3. Trip Addition Notifications
         cursor.execute("""
             SELECT 
                 'trip_added' as type,
@@ -3193,7 +4117,7 @@ def get_notifications(user_id):
         """, (user_id,))
         notifications.extend(cursor.fetchall())
         
-        # 3. Recent Unread Messages (both group and direct)
+        # 4. Recent Unread Messages (both group and direct)
         cursor.execute("""
             SELECT 
                 'message' as type,

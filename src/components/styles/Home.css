@@ -1358,9 +1358,9 @@
   flex: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
   min-width: 0;
+  cursor: pointer;
 }
 
 .trip-main-info {
@@ -1441,10 +1441,11 @@
   transform: translateX(4px);
 }
 
-.trip-action-buttons {
+.trip-card-actions {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .trip-manage-btn,
@@ -1735,6 +1736,24 @@
   font-size: 0.8125rem;
   color: #a1a1aa;
   font-weight: 500;
+}
+
+.show-more-friends-btn {
+  width: 100%;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: 1px dashed #3f3f46;
+  border-radius: 8px;
+  color: #a1a1aa;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.show-more-friends-btn:hover {
+  border-color: #52525b;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .location-input-row {
@@ -2142,7 +2161,8 @@
 }
 
 .add-member-btn,
-.remove-member-btn {
+.remove-member-btn,
+.request-add-btn {
   width: 32px;
   height: 32px;
   border-radius: 6px;
@@ -2176,6 +2196,91 @@
 .remove-member-btn:hover {
   background: #ef4444;
   border-color: #ef4444;
+  color: #ffffff;
+}
+
+.request-add-btn {
+  background: transparent;
+  border-color: #52525b;
+  color: #a1a1aa;
+}
+
+.request-add-btn:hover {
+  background: #a78bfa;
+  border-color: #a78bfa;
+  color: #ffffff;
+}
+
+/* Request card styles */
+.request-card {
+  border-left: 3px solid #a78bfa;
+  background: rgba(167, 139, 250, 0.05);
+}
+
+/* Invitation pending card styles */
+.invitation-pending-card {
+  border-left: 3px solid #88BDF2;
+  background: rgba(136, 189, 242, 0.05);
+}
+
+.invitation-status {
+  flex-shrink: 0;
+}
+
+.status-badge {
+  padding: 0.375rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.status-badge.pending {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.request-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.approve-request-btn,
+.reject-request-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.approve-request-btn {
+  background: transparent;
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.approve-request-btn:hover {
+  background: #10b981;
+  color: #ffffff;
+}
+
+.reject-request-btn {
+  background: transparent;
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.reject-request-btn:hover {
+  background: #ef4444;
   color: #ffffff;
 }
 

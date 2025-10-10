@@ -70,22 +70,7 @@
   scroll-behavior: smooth;
 }
 
-.chatroom-messages::-webkit-scrollbar {
-  width: 6px;
-}
-
-.chatroom-messages::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.chatroom-messages::-webkit-scrollbar-thumb {
-  background: #27272a;
-  border-radius: 4px;
-}
-
-.chatroom-messages::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
-}
+/* Scrollbar uses global styles from index.css */
 
 /* Date Divider */
 .message-date-group {

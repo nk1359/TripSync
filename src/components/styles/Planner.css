@@ -1009,27 +1009,8 @@
   }
 }
 
-/* Scrollbar Styling */
-.modal-content::-webkit-scrollbar,
-.place-suggestions::-webkit-scrollbar {
-  width: 8px;
-}
-
-.modal-content::-webkit-scrollbar-track,
-.place-suggestions::-webkit-scrollbar-track {
-  background: #18181b;
-}
-
-.modal-content::-webkit-scrollbar-thumb,
-.place-suggestions::-webkit-scrollbar-thumb {
-  background: #27272a;
-  border-radius: 4px;
-}
-
-.modal-content::-webkit-scrollbar-thumb:hover,
-.place-suggestions::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
-}
+/* Scrollbar Styling - uses global styles from index.css */
+/* Custom scrollbar for modals can be defined here if needed */
 
 /* Responsive */
 @media (max-width: 768px) {

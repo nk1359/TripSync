@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from './AuthContext';
+import { useToast } from './ToastContext';
 import Layout from './Layout';
 import './styles/Home.css';
 import AddToCalendarModal from './AddToCalendarModal';
@@ -10,6 +11,7 @@ import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft
 const Home = () => {
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [welcomeData, setWelcomeData] = useState(null);
   const [selectedPlaceForModal, setSelectedPlaceForModal] = useState(null);
@@ -53,6 +55,8 @@ const Home = () => {
   });
   const [tripFriends, setTripFriends] = useState([]); // Available friends to invite
   const [selectedFriends, setSelectedFriends] = useState([]); // Selected friend IDs for this trip
+  const [friendSearchQuery, setFriendSearchQuery] = useState(''); // Search query for friends
+  const [showAllFriends, setShowAllFriends] = useState(false); // Show all friends or just suggestions
   const [tripLocations, setTripLocations] = useState([]);
   
   // Manage Members Modal States
@@ -60,6 +64,10 @@ const Home = () => {
   const [manageTripId, setManageTripId] = useState(null);
   const [tripMembers, setTripMembers] = useState([]);
   const [availableFriends, setAvailableFriends] = useState([]);
+  const [currentUserRole, setCurrentUserRole] = useState(null);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [sentInvitations, setSentInvitations] = useState([]);
+  const [myPendingRequests, setMyPendingRequests] = useState([]); // Requests I've made
   
   // Fetch friends when trip modal opens
   useEffect(() => {
@@ -277,14 +285,14 @@ const Home = () => {
       const data = await response.json();
 
       if (response.ok) {
-        alert('Trip deleted successfully!');
+        showToast('Trip deleted successfully', 'success');
         fetchTrips(); // Refresh trips list
       } else {
-        alert(data.error || 'Failed to delete trip');
+        showToast(data.error || 'Failed to delete trip', 'error');
       }
     } catch (error) {
       console.error('Error deleting trip:', error);
-      alert('Failed to delete trip');
+      showToast('Failed to delete trip', 'error');
     }
   };
 
@@ -295,40 +303,170 @@ const Home = () => {
       const data = await response.json();
       setTripMembers(data.members || []);
       
-      // Fetch friends who aren't already members
+      // Find current user's role
+      const currentMember = (data.members || []).find(m => m.user_id === user.user_id);
+      const userRole = currentMember?.role || null;
+      setCurrentUserRole(userRole);
+      
+      // Fetch all friends
       const friendsResponse = await fetch(`http://localhost:5000/api/friends/${user.user_id}`);
       const friendsData = await friendsResponse.json();
       const memberIds = (data.members || []).map(m => m.user_id);
-      const available = (friendsData.friends || []).filter(f => !memberIds.includes(f.user_id));
+      
+      // Fetch sent invitations
+      const invitationsResponse = await fetch(`http://localhost:5000/api/trips/${tripId}/sent-invitations?user_id=${user.user_id}`);
+      let invitedUserIds = [];
+      if (invitationsResponse.ok) {
+        const invitationsData = await invitationsResponse.json();
+        setSentInvitations(invitationsData.invitations || []);
+        invitedUserIds = (invitationsData.invitations || []).map(inv => inv.friend_id);
+      }
+      
+      // Fetch my pending requests (for non-owners)
+      let myRequestedUserIds = [];
+      if (userRole && !['owner', 'admin'].includes(userRole)) {
+        const myRequestsResponse = await fetch(`http://localhost:5000/api/trips/${tripId}/my-requests?user_id=${user.user_id}`);
+        if (myRequestsResponse.ok) {
+          const myRequestsData = await myRequestsResponse.json();
+          setMyPendingRequests(myRequestsData.requests || []);
+          myRequestedUserIds = (myRequestsData.requests || []).map(req => req.friend_id);
+        }
+      }
+      
+      // Different filtering based on role:
+      // - Owners/admins: filter out members and invited users (to avoid duplicate invitations)
+      // - Regular members: filter out members and people they've already requested
+      let available;
+      if (userRole && ['owner', 'admin'].includes(userRole)) {
+        available = (friendsData.friends || []).filter(
+          f => !memberIds.includes(f.user_id) && !invitedUserIds.includes(f.user_id)
+        );
+      } else {
+        available = (friendsData.friends || []).filter(
+          f => !memberIds.includes(f.user_id) && !myRequestedUserIds.includes(f.user_id)
+        );
+      }
+      
       setAvailableFriends(available);
     } catch (error) {
       console.error('Error fetching trip members:', error);
     }
   };
 
-  // Add member to trip
-  const handleAddMemberToTrip = async (friendId) => {
+  // Fetch pending member requests (for owners/admins)
+  const fetchPendingRequests = async (tripId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${manageTripId}/members`, {
+      const response = await fetch(`http://localhost:5000/api/trips/${tripId}/member-requests?user_id=${user.user_id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setPendingRequests(data.requests || []);
+      }
+    } catch (error) {
+      console.error('Error fetching pending requests:', error);
+    }
+  };
+
+
+  // Request to add a member (for non-owners)
+  const handleRequestAddMember = async (friendId) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/trips/${manageTripId}/member-requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: user.user_id,
-          member_id: friendId
+          requester_id: user.user_id,
+          friend_id: friendId
         })
       });
 
       const data = await response.json();
       
       if (response.ok) {
-        fetchTripMembers(manageTripId); // Refresh members list
-        fetchTrips(); // Refresh trips to update member count
+        showToast('Request sent! Waiting for owner and friend approval.', 'success');
+        // Refresh to show updated lists
+        fetchTripMembers(manageTripId);
       } else {
-        alert(data.error || 'Failed to add member');
+        showToast(data.error || 'Failed to send request', 'error');
       }
     } catch (error) {
-      console.error('Error adding member:', error);
-      alert('Failed to add member');
+      console.error('Error requesting member addition:', error);
+      showToast('Failed to send request', 'error');
+    }
+  };
+
+  // Approve member request (for owners/admins)
+  const handleApproveRequest = async (requestId) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/trips/${manageTripId}/member-requests/${requestId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.user_id })
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        const msg = data.message || 'Request approved!';
+        showToast(msg, 'success');
+        fetchTripMembers(manageTripId);
+        fetchPendingRequests(manageTripId);
+        fetchTrips();
+      } else {
+        showToast(data.error || 'Failed to approve request', 'error');
+      }
+    } catch (error) {
+      console.error('Error approving request:', error);
+      showToast('Failed to approve request', 'error');
+    }
+  };
+
+  // Reject member request (for owners/admins)
+  const handleRejectRequest = async (requestId) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/trips/${manageTripId}/member-requests/${requestId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.user_id })
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        showToast('Request rejected', 'info');
+        fetchPendingRequests(manageTripId);
+      } else {
+        showToast(data.error || 'Failed to reject request', 'error');
+      }
+    } catch (error) {
+      console.error('Error rejecting request:', error);
+      showToast('Failed to reject request', 'error');
+    }
+  };
+
+  // Send invitation to join trip (for owners/admins)
+  const handleAddMemberToTrip = async (friendId) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/trips/${manageTripId}/member-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requester_id: user.user_id,
+          friend_id: friendId
+        })
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        showToast('Invitation sent! Your friend can accept or decline it.', 'success');
+        // Refresh to update lists
+        fetchTripMembers(manageTripId);
+      } else {
+        showToast(data.error || 'Failed to send invitation', 'error');
+      }
+    } catch (error) {
+      console.error('Error sending invitation:', error);
+      showToast('Failed to send invitation', 'error');
     }
   };
 
@@ -351,11 +489,11 @@ const Home = () => {
         fetchTripMembers(manageTripId); // Refresh members list
         fetchTrips(); // Refresh trips to update member count
       } else {
-        alert(data.error || 'Failed to remove member');
+        showToast(data.error || 'Failed to remove member', 'error');
       }
     } catch (error) {
       console.error('Error removing member:', error);
-      alert('Failed to remove member');
+      showToast('Failed to remove member', 'error');
     }
   };
 
@@ -363,6 +501,7 @@ const Home = () => {
   useEffect(() => {
     if (showManageMembersModal && manageTripId) {
       fetchTripMembers(manageTripId);
+      fetchPendingRequests(manageTripId);
     }
   }, [showManageMembersModal, manageTripId]);
 
@@ -382,7 +521,7 @@ const Home = () => {
   // Add place to planner
   const handleAddToPlanner = async () => {
     if (!selectedTripForPlanner || !selectedDayForPlanner) {
-      alert('Please select a trip and date');
+      showToast('Please select a trip and date', 'info');
       return;
     }
     
@@ -436,14 +575,14 @@ const Home = () => {
           setPlannerContext(null);
           navigate('/planner');
         } else {
-          alert(`Added ${selectedPlaceForModal.place_name} to your trip!`);
+          showToast(`Added ${selectedPlaceForModal.place_name} to your trip!`, 'success');
         }
       } else {
-        alert(data.error || 'Failed to add to planner');
+        showToast(data.error || 'Failed to add to planner', 'error');
       }
     } catch (error) {
       console.error('Error adding to planner:', error);
-      alert('Failed to add to planner');
+      showToast('Failed to add to planner', 'error');
     }
   };
 
@@ -491,10 +630,10 @@ const Home = () => {
     }
   };
 
-  // Add location to trip
+  // Add another location (saves current and prepares for next)
   const handleAddLocation = () => {
     if (!currentLocation.city || !currentLocation.startDate) {
-      alert('Please enter city and start date');
+      showToast('Please enter city and start date', 'info');
       return;
     }
 
@@ -505,10 +644,11 @@ const Home = () => {
       ));
       setEditingLocationId(null);
     } else {
-      // Add new location
+      // Add current location to the list
       setTripLocations([...tripLocations, { ...currentLocation, id: Date.now() }]);
     }
     
+    // Clear form to add another location
     setCurrentLocation({ city: '', state: '', startDate: '', endDate: '' });
   };
 
@@ -544,26 +684,27 @@ const Home = () => {
   // Create new trip
   const handleCreateTrip = async () => {
     if (!tripForm.tripName.trim()) {
-      alert('Please enter a trip name');
+      showToast('Please enter a trip name', 'info');
       return;
     }
 
     // Auto-add current location if it has data and hasn't been added yet
+    let finalLocations = [...tripLocations];
     if (currentLocation.city && currentLocation.state && currentLocation.startDate) {
-      await handleAddLocation();
+      finalLocations.push({ ...currentLocation, id: Date.now() });
     }
 
-    if (tripLocations.length === 0) {
-      alert('Please add at least one location');
+    if (finalLocations.length === 0) {
+      showToast('Please add at least one location', 'info');
       return;
     }
 
     // Get the earliest start date and latest end date from locations
-    const startDates = tripLocations.map(loc => loc.startDate).filter(date => date);
-    const endDates = tripLocations.map(loc => loc.endDate).filter(date => date);
+    const startDates = finalLocations.map(loc => loc.startDate).filter(date => date);
+    const endDates = finalLocations.map(loc => loc.endDate).filter(date => date);
     
     if (startDates.length === 0 || endDates.length === 0) {
-      alert('Please ensure all locations have valid dates');
+      showToast('Please ensure all locations have valid dates', 'info');
       return;
     }
 
@@ -571,6 +712,7 @@ const Home = () => {
     const tripEndDate = new Date(Math.max(...endDates.map(date => new Date(date))));
 
     try {
+      // Create trip without automatically adding members
       const response = await fetch('http://localhost:5000/api/trips', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -580,25 +722,52 @@ const Home = () => {
           start_date: tripStartDate.toISOString().split('T')[0],
           end_date: tripEndDate.toISOString().split('T')[0],
           created_by: user.user_id,
-          member_ids: selectedFriends  // Add selected friends to trip and group chat
+          member_ids: []  // Don't auto-add friends
         })
       });
 
       const data = await response.json();
       
       if (response.ok) {
+        const newTripId = data.trip_id;
+        
+        // Send friend requests for each selected friend
+        if (selectedFriends.length > 0) {
+          const requestPromises = selectedFriends.map(friendId =>
+            fetch(`http://localhost:5000/api/trips/${newTripId}/member-requests`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                requester_id: user.user_id,
+                friend_id: friendId
+              })
+            })
+          );
+          
+          try {
+            await Promise.all(requestPromises);
+            showToast(`Trip created! ${selectedFriends.length} friend invitation${selectedFriends.length > 1 ? 's' : ''} sent.`, 'success');
+          } catch (error) {
+            console.error('Error sending friend invitations:', error);
+            showToast('Trip created, but some invitations failed to send', 'error');
+          }
+        } else {
+          showToast('Trip created successfully!', 'success');
+        }
+        
         setShowTripModal(false);
         setTripForm({ tripName: '', description: '', memberIds: [] });
         setTripLocations([]);
         setSelectedFriends([]);
+        setFriendSearchQuery('');
+        setShowAllFriends(false);
         fetchTrips(); // Refresh trips
-        alert('Trip created successfully!');
       } else {
-        alert(data.error || 'Failed to create trip');
+        showToast(data.error || 'Failed to create trip', 'error');
       }
     } catch (error) {
       console.error('Error creating trip:', error);
-      alert('Failed to create trip');
+      showToast('Failed to create trip', 'error');
     }
   };
 
@@ -1057,24 +1226,24 @@ const Home = () => {
     <>
       {user && (
         <div className="trips-dashboard">
-          <div className="trips-header">
-            <div className="trips-header-content">
-              <h2>My Trips</h2>
-              <p className="trips-subtitle">Plan, collaborate, and explore your adventures</p>
+            <div className="trips-header">
+              <div className="trips-header-content">
+                <h2>My Trips</h2>
+                <p className="trips-subtitle">Plan, collaborate, and explore your adventures</p>
+              </div>
+              <button 
+                className="new-trip-btn"
+                onClick={() => setShowTripModal(true)}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                New Trip
+              </button>
             </div>
-            <button 
-              className="new-trip-btn"
-              onClick={() => setShowTripModal(true)}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              New Trip
-            </button>
-          </div>
 
-          <div className="trips-grid">
+            <div className="trips-grid">
             {trips.length > 0 ? (
               trips.map((trip, index) => {
                 // Parse dates if available
@@ -1102,7 +1271,7 @@ const Home = () => {
                       </svg>
                     </div>
                     
-                    <div className="trip-card-content" onClick={() => navigate('/planner')}>
+                    <div className="trip-card-content" onClick={() => navigate(`/planner?trip=${trip.trip_id}`)}>
                       <div className="trip-main-info">
                         <div className="trip-title-row">
                           <h3 className="trip-title">{trip.trip_name || trip.group_name || 'Untitled Trip'}</h3>
@@ -1141,15 +1310,7 @@ const Home = () => {
                         )}
                       </div>
                       
-                      <div className="trip-arrow">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <polyline points="9 18 15 12 9 6"></polyline>
-                        </svg>
-                      </div>
-                    </div>
-                    
-                    {isOwner && (
-                      <div className="trip-action-buttons">
+                      <div className="trip-card-actions">
                         <button 
                           className="trip-manage-btn"
                           onClick={(e) => {
@@ -1157,7 +1318,7 @@ const Home = () => {
                             setManageTripId(trip.trip_id);
                             setShowManageMembersModal(true);
                           }}
-                          title="Manage members"
+                          title={isOwner ? "Manage members" : "View members & request to add"}
                         >
                           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -1166,23 +1327,31 @@ const Home = () => {
                             <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                           </svg>
                         </button>
-                        <button 
-                          className="trip-delete-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteTrip(trip.trip_id);
-                          }}
-                          title="Delete trip"
-                        >
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                            <line x1="10" y1="11" x2="10" y2="17"></line>
-                            <line x1="14" y1="11" x2="14" y2="17"></line>
+                        {isOwner && (
+                          <button 
+                            className="trip-delete-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteTrip(trip.trip_id);
+                            }}
+                            title="Delete trip"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="3 6 5 6 21 6"></polyline>
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                              <line x1="10" y1="11" x2="10" y2="17"></line>
+                              <line x1="14" y1="11" x2="14" y2="17"></line>
+                            </svg>
+                          </button>
+                        )}
+                        
+                        <div className="trip-arrow">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="9 18 15 12 9 6"></polyline>
                           </svg>
-                        </button>
+                        </div>
                       </div>
-                    )}
+                    </div>
                   </div>
                 );
               })
@@ -1908,25 +2077,66 @@ const Home = () => {
               {tripFriends.length > 0 && (
                 <div className="trip-form-section">
                   <label>Invite Friends (Optional)</label>
-                  <div className="friends-selection-grid">
-                    {tripFriends.map(friend => (
-                      <div 
-                        key={friend.user_id}
-                        className={`friend-chip ${selectedFriends.includes(friend.user_id) ? 'selected' : ''}`}
-                        onClick={() => toggleFriendSelection(friend.user_id)}
-                      >
-                        <div className="friend-chip-avatar">
-                          {friend.first_name.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="friend-chip-name">{friend.first_name} {friend.last_name}</span>
-                        {selectedFriends.includes(friend.user_id) && (
-                          <svg className="friend-check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                            <polyline points="20 6 9 17 4 12"></polyline>
-                          </svg>
-                        )}
-                      </div>
-                    ))}
+                  
+                  {/* Search Friends */}
+                  <div className="friend-search-container">
+                    <input
+                      type="text"
+                      placeholder="Search friends..."
+                      value={friendSearchQuery}
+                      onChange={(e) => setFriendSearchQuery(e.target.value)}
+                      className="trip-input"
+                      style={{ marginBottom: '1rem' }}
+                    />
                   </div>
+
+                  <div className="friends-selection-grid">
+                    {(() => {
+                      const filteredFriends = tripFriends.filter(friend => {
+                        const searchLower = friendSearchQuery.toLowerCase();
+                        return (
+                          `${friend.first_name} ${friend.last_name}`.toLowerCase().includes(searchLower) ||
+                          friend.username?.toLowerCase().includes(searchLower)
+                        );
+                      });
+                      
+                      // Show only 2 suggestions if not searching and not showing all
+                      const friendsToShow = friendSearchQuery || showAllFriends 
+                        ? filteredFriends 
+                        : filteredFriends.slice(0, 2);
+                      
+                      return friendsToShow.map(friend => (
+                        <div 
+                          key={friend.user_id}
+                          className={`friend-chip ${selectedFriends.includes(friend.user_id) ? 'selected' : ''}`}
+                          onClick={() => toggleFriendSelection(friend.user_id)}
+                        >
+                          <div className="friend-chip-avatar">
+                            {friend.first_name.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="friend-chip-name">{friend.first_name} {friend.last_name}</span>
+                          {selectedFriends.includes(friend.user_id) && (
+                            <svg className="friend-check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                          )}
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                  
+                  {/* Show More/Less button */}
+                  {!friendSearchQuery && tripFriends.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllFriends(!showAllFriends)}
+                      className="show-more-friends-btn"
+                      style={{ marginTop: '0.75rem' }}
+                    >
+                      {showAllFriends ? 'Show Less' : `Show ${tripFriends.length - 2} More`}
+                    </button>
+                  )}
+                  
                   {selectedFriends.length > 0 && (
                     <p className="selected-friends-count">
                       {selectedFriends.length} friend{selectedFriends.length > 1 ? 's' : ''} selected
@@ -2008,11 +2218,13 @@ const Home = () => {
                     />
                   </div>
                   
+                  {/* Always show + button */}
                   <button
                     type="button"
                     onClick={handleAddLocation}
                     className={`circular-add-btn ${editingLocationId ? 'update-mode' : ''}`}
                     aria-label={editingLocationId ? "Update destination" : "Add destination"}
+                    title={editingLocationId ? "Update destination" : tripLocations.length > 0 ? "Add another destination" : "Add destination"}
                   >
                     {editingLocationId ? (
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -2140,10 +2352,106 @@ const Home = () => {
                 </div>
               </div>
 
+              {/* Sent Invitations - Show for owners/admins */}
+              {currentUserRole && ['owner', 'admin'].includes(currentUserRole) && sentInvitations.length > 0 && (
+                <div className="members-section">
+                  <h3>Pending Invitations ({sentInvitations.length})</h3>
+                  <div className="members-list">
+                    {sentInvitations.map(invitation => (
+                      <div key={invitation.invitation_id} className="member-card invitation-pending-card">
+                        <div className="member-avatar">
+                          {invitation.first_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="member-info">
+                          <div className="member-name">{invitation.first_name} {invitation.last_name}</div>
+                          <div className="member-username">
+                            Waiting for their response
+                          </div>
+                        </div>
+                        <div className="invitation-status">
+                          <span className="status-badge pending">Pending</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* My Pending Requests - Show for non-owners */}
+              {currentUserRole && !['owner', 'admin'].includes(currentUserRole) && myPendingRequests.length > 0 && (
+                <div className="members-section">
+                  <h3>My Pending Requests ({myPendingRequests.length})</h3>
+                  <div className="members-list">
+                    {myPendingRequests.map(request => (
+                      <div key={request.request_id} className="member-card invitation-pending-card">
+                        <div className="member-avatar">
+                          {request.first_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="member-info">
+                          <div className="member-name">{request.first_name} {request.last_name}</div>
+                          <div className="member-username">
+                            {request.owner_approved && !request.friend_accepted 
+                              ? 'Owner approved, waiting for friend'
+                              : !request.owner_approved && request.friend_accepted
+                              ? 'Friend accepted, waiting for owner'
+                              : 'Waiting for approvals'}
+                          </div>
+                        </div>
+                        <div className="invitation-status">
+                          <span className="status-badge pending">Pending</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Pending Requests - Only for Owners/Admins */}
+              {currentUserRole && ['owner', 'admin'].includes(currentUserRole) && pendingRequests.length > 0 && (
+                <div className="members-section">
+                  <h3>Member Requests ({pendingRequests.length})</h3>
+                  <div className="members-list">
+                    {pendingRequests.map(request => (
+                      <div key={request.request_id} className="member-card request-card">
+                        <div className="member-avatar">
+                          {request.friend_first_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="member-info">
+                          <div className="member-name">{request.friend_first_name} {request.friend_last_name}</div>
+                          <div className="member-username">
+                            Requested by {request.requester_first_name}
+                          </div>
+                        </div>
+                        <div className="request-actions">
+                          <button 
+                            onClick={() => handleApproveRequest(request.request_id)}
+                            className="approve-request-btn"
+                            title="Approve request"
+                          >
+                            ✓
+                          </button>
+                          <button 
+                            onClick={() => handleRejectRequest(request.request_id)}
+                            className="reject-request-btn"
+                            title="Reject request"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Add Members */}
               {availableFriends.length > 0 && (
                 <div className="members-section">
-                  <h3>Add Friends</h3>
+                  <h3>
+                    {currentUserRole && ['owner', 'admin'].includes(currentUserRole) 
+                      ? 'Invite Friends' 
+                      : 'Request to Add Friends'}
+                  </h3>
                   <div className="members-list">
                     {availableFriends.map(friend => (
                       <div key={friend.user_id} className="member-card">
@@ -2155,12 +2463,17 @@ const Home = () => {
                           <div className="member-username">@{friend.username}</div>
                         </div>
                         <button 
-                          onClick={() => handleAddMemberToTrip(friend.user_id)}
-                          className="add-member-btn"
+                          onClick={() => currentUserRole && ['owner', 'admin'].includes(currentUserRole) 
+                            ? handleAddMemberToTrip(friend.user_id) 
+                            : handleRequestAddMember(friend.user_id)}
+                          className={currentUserRole && ['owner', 'admin'].includes(currentUserRole) ? "add-member-btn" : "request-add-btn"}
+                          title={currentUserRole && ['owner', 'admin'].includes(currentUserRole) ? "Send invitation" : "Request to add"}
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="12" y1="5" x2="12" y2="19"></line>
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="8.5" cy="7" r="4"></circle>
+                            <line x1="20" y1="8" x2="20" y2="14"></line>
+                            <line x1="23" y1="11" x2="17" y2="11"></line>
                           </svg>
                         </button>
                       </div>

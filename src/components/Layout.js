@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { AuthContext } from './AuthContext';
+import { useToast } from './ToastContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   FaUser, 
@@ -23,6 +24,7 @@ const Layout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useContext(AuthContext); 
+  const { showToast } = useToast();
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -188,9 +190,7 @@ const Layout = ({ children }) => {
   // Function to accept a friend request
   const acceptFriendRequest = (requestId) => {
     axios
-      .post('http://localhost:5000/api/accept_friend_request', {
-        request_id: requestId
-      })
+      .post(`http://localhost:5000/api/accept_friend_request/${requestId}`, {})
       .then(() => {
         fetchNotifications(); // Refresh notifications
       })
@@ -201,18 +201,53 @@ const Layout = ({ children }) => {
 
   const rejectFriendRequest = (requestId) => {
     axios
-      .post('http://localhost:5000/api/reject_friend_request', {
-        request_id: requestId
-      })
+      .post(`http://localhost:5000/api/reject_friend_request/${requestId}`, {})
       .then(() => {
         fetchNotifications(); // Refresh notifications
       })
       .catch((err) => console.error(err));
   };
 
+  const acceptTripInvitation = (invitationId) => {
+    axios
+      .post(`http://localhost:5000/api/trip-invitations/${invitationId}/accept`, {
+        user_id: user.user_id
+      })
+      .then((response) => {
+        fetchNotifications(); // Refresh notifications
+        const message = response.data?.message || 'Invitation accepted!';
+        showToast(message, 'success');
+      })
+      .catch((err) => {
+        console.error(err);
+        showToast('Failed to accept invitation', 'error');
+      });
+  };
+
+  const declineTripInvitation = (invitationId) => {
+    axios
+      .post(`http://localhost:5000/api/trip-invitations/${invitationId}/decline`, {
+        user_id: user.user_id
+      })
+      .then(() => {
+        fetchNotifications(); // Refresh notifications
+        showToast('Invitation declined', 'info');
+      })
+      .catch((err) => {
+        console.error(err);
+        showToast('Failed to decline invitation', 'error');
+      });
+  };
+
   const handleNotificationClick = (notification) => {
     if (notification.type === 'friend_request') {
       // Already handled by accept/reject buttons
+      return;
+    } else if (notification.type === 'trip_invitation') {
+      // Already handled by accept/decline buttons
+      return;
+    } else if (notification.type === 'member_request') {
+      // Already handled by approve/reject in Manage Members modal
       return;
     } else if (notification.type === 'trip_added') {
       // Mark as read and navigate to planner
@@ -343,6 +378,8 @@ const Layout = ({ children }) => {
                             >
                               <div className="notification-avatar">
                                 {notification.type === 'friend_request' && notification.first_name.charAt(0).toUpperCase()}
+                                {notification.type === 'trip_invitation' && notification.first_name.charAt(0).toUpperCase()}
+                                {notification.type === 'member_request' && notification.first_name.charAt(0).toUpperCase()}
                                 {notification.type === 'trip_added' && notification.first_name.charAt(0).toUpperCase()}
                                 {notification.type === 'message' && notification.chat_name.charAt(0).toUpperCase()}
                               </div>
@@ -354,6 +391,26 @@ const Layout = ({ children }) => {
                                     </div>
                                     <div className="notification-subtitle">
                                       Sent you a friend request
+                                    </div>
+                                  </>
+                                )}
+                                {notification.type === 'trip_invitation' && (
+                                  <>
+                                    <div className="notification-title">
+                                      {notification.message_preview}
+                                    </div>
+                                    <div className="notification-subtitle">
+                                      {notification.first_name} invited you to join this trip
+                                    </div>
+                                  </>
+                                )}
+                                {notification.type === 'member_request' && (
+                                  <>
+                                    <div className="notification-title">
+                                      {notification.trip_name}
+                                    </div>
+                                    <div className="notification-subtitle">
+                                      {notification.first_name} wants to add {notification.friend_first_name} to the trip
                                     </div>
                                   </>
                                 )}
@@ -391,6 +448,66 @@ const Layout = ({ children }) => {
                                   <button 
                                     className="reject-button"
                                     onClick={() => rejectFriendRequest(notification.notification_id)}
+                                    aria-label="Reject"
+                                  >
+                                    <FaTimesCircle />
+                                  </button>
+                                </div>
+                              )}
+                              {notification.type === 'trip_invitation' && (
+                                <div className="notification-actions" onClick={(e) => e.stopPropagation()}>
+                                  <button 
+                                    className="accept-button" 
+                                    onClick={() => acceptTripInvitation(notification.notification_id)}
+                                    aria-label="Accept"
+                                  >
+                                    <FaCheckCircle />
+                                  </button>
+                                  <button 
+                                    className="reject-button"
+                                    onClick={() => declineTripInvitation(notification.notification_id)}
+                                    aria-label="Decline"
+                                  >
+                                    <FaTimesCircle />
+                                  </button>
+                                </div>
+                              )}
+                              {notification.type === 'member_request' && (
+                                <div className="notification-actions" onClick={(e) => e.stopPropagation()}>
+                                  <button 
+                                    className="accept-button" 
+                                    onClick={() => {
+                                      axios.post(`http://localhost:5000/api/trips/${notification.trip_id}/member-requests/${notification.notification_id}/approve`, {
+                                        user_id: user.user_id
+                                      })
+                                      .then(() => {
+                                        fetchNotifications();
+                                        showToast('Request approved!', 'success');
+                                      })
+                                      .catch(err => {
+                                        console.error(err);
+                                        showToast('Failed to approve request', 'error');
+                                      });
+                                    }}
+                                    aria-label="Approve"
+                                  >
+                                    <FaCheckCircle />
+                                  </button>
+                                  <button 
+                                    className="reject-button"
+                                    onClick={() => {
+                                      axios.post(`http://localhost:5000/api/trips/${notification.trip_id}/member-requests/${notification.notification_id}/reject`, {
+                                        user_id: user.user_id
+                                      })
+                                      .then(() => {
+                                        fetchNotifications();
+                                        showToast('Request rejected', 'info');
+                                      })
+                                      .catch(err => {
+                                        console.error(err);
+                                        showToast('Failed to reject request', 'error');
+                                      });
+                                    }}
                                     aria-label="Reject"
                                   >
                                     <FaTimesCircle />

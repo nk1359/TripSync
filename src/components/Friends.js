@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from './AuthContext';
 import Layout from './Layout';
 import axios from 'axios';
-import { FaUserFriends, FaSearch, FaTimesCircle, FaCheckCircle } from 'react-icons/fa';
+import { FaUserFriends, FaSearch, FaTimesCircle, FaCheckCircle, FaComments } from 'react-icons/fa';
 import './styles/Friends.css';
 
 const Friends = () => {
@@ -14,6 +14,7 @@ const Friends = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchMessage, setSearchMessage] = useState('');
+  const [friendsFilter, setFriendsFilter] = useState(''); // Filter for My Friends tab
 
   useEffect(() => {
     if (user?.user_id) {
@@ -95,6 +96,27 @@ const Friends = () => {
     }
   };
 
+  const startDirectMessage = async (friend) => {
+    try {
+      const response = await axios.post('http://localhost:5000/api/chats/direct', {
+        user_id: user.user_id,
+        friend_id: friend.user_id
+      });
+      
+      if (response.data.chat_id) {
+        // Trigger floating chat to open
+        window.dispatchEvent(new CustomEvent('openChat', { 
+          detail: { 
+            chat_id: response.data.chat_id,
+            chat_name: response.data.chat_name 
+          } 
+        }));
+      }
+    } catch (error) {
+      console.error('Error creating direct chat:', error);
+    }
+  };
+
   const acceptFriendRequest = async (requestId) => {
     try {
       await axios.post('http://localhost:5000/api/accept_friend_request', {
@@ -143,9 +165,21 @@ const Friends = () => {
       </div>
       <div className="person-actions">
         {showRemove ? (
-          <button onClick={() => removeFriend(person.user_id)} className="friend-btn remove-btn">
-            <FaTimesCircle /> Remove
-          </button>
+          <>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                startDirectMessage(person);
+              }} 
+              className="friend-btn message-icon-btn"
+              title="Send message"
+            >
+              <FaComments />
+            </button>
+            <button onClick={() => removeFriend(person.user_id)} className="friend-btn remove-btn">
+              <FaTimesCircle /> Remove
+            </button>
+          </>
         ) : (
           getFriendActionButton(person)
         )}
@@ -188,17 +222,37 @@ const Friends = () => {
           <div className="friends-content">
             {/* My Friends Tab */}
             {activeTab === 'friends' && (
-              <div className="friends-grid">
-                {friends.length > 0 ? (
-                  friends.map(friend => renderPersonCard(friend, true))
-                ) : (
-                  <div className="empty-state">
-                    <FaUserFriends className="empty-icon" />
-                    <h3>No friends yet</h3>
-                    <p>Search for friends or check out suggestions to get started</p>
+              <>
+                {friends.length > 0 && (
+                  <div className="search-input-container friends-filter-container">
+                    <input
+                      type="text"
+                      placeholder="Filter friends..."
+                      value={friendsFilter}
+                      onChange={(e) => setFriendsFilter(e.target.value)}
+                      className="search-input"
+                    />
+                    <FaSearch className="search-icon-static" />
                   </div>
                 )}
-              </div>
+                <div className="friends-grid">
+                  {friends.length > 0 ? (
+                    friends
+                      .filter(friend => 
+                        friendsFilter === '' || 
+                        `${friend.first_name} ${friend.last_name}`.toLowerCase().includes(friendsFilter.toLowerCase()) ||
+                        friend.username.toLowerCase().includes(friendsFilter.toLowerCase())
+                      )
+                      .map(friend => renderPersonCard(friend, true))
+                  ) : (
+                    <div className="empty-state">
+                      <FaUserFriends className="empty-icon" />
+                      <h3>No friends yet</h3>
+                      <p>Search for friends or check out suggestions to get started</p>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
 
             {/* Suggestions Tab */}

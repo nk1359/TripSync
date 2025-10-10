@@ -131,6 +131,8 @@
 
 .person-actions {
   flex-shrink: 0;
+  display: flex;
+  gap: 0.5rem;
 }
 
 /* Friend Action Buttons */
@@ -172,6 +174,25 @@
   transform: translateY(-1px);
 }
 
+.message-icon-btn {
+  background: transparent;
+  color: #a1a1aa;
+  border: 1px solid #52525b;
+  padding: 0.5rem;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.message-icon-btn:hover {
+  background: #3f3f46;
+  color: #88BDF2;
+  border-color: #88BDF2;
+  transform: translateY(-1px);
+}
+
 .friends-btn {
   background: rgba(16, 185, 129, 0.15);
   color: #10b981;
@@ -206,17 +227,30 @@
 }
 
 .search-input-container {
-  display: flex;
-  gap: 0;
+  position: relative;
   max-width: 600px;
 }
 
+.friends-filter-container {
+  margin: 0 0 1.5rem 0;
+  max-width: 400px;
+}
+
+.search-icon-static {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #71717a;
+  pointer-events: none;
+  font-size: 1rem;
+}
+
 .search-input {
-  flex: 1;
-  padding: 0.875rem 1.125rem;
+  width: 100%;
+  padding: 0.875rem 3.5rem 0.875rem 1.125rem;
   border: 1.5px solid #3f3f46;
-  border-radius: 8px 0 0 8px;
-  border-right: none;
+  border-radius: 8px;
   background: #27272a;
   color: #ffffff;
   font-size: 0.9375rem;
@@ -233,28 +267,26 @@
   background: #1f1f23;
 }
 
-.search-input:focus + .search-btn {
-  border-color: #ffffff;
-}
-
 .search-btn {
-  padding: 0.875rem 1.5rem;
-  background: #27272a;
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0.5rem;
+  background: transparent;
   color: #a1a1aa;
-  border: 1.5px solid #3f3f46;
-  border-radius: 0 8px 8px 0;
-  font-size: 1rem;
-  font-weight: 500;
+  border: none;
+  font-size: 1.125rem;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 60px;
+  border-radius: 6px;
 }
 
 .search-btn:hover:not(:disabled) {
-  background: #2a2a2e;
+  background: #3f3f46;
   color: #ffffff;
 }
 

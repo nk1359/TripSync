@@ -487,7 +487,7 @@ def get_user_chats(user_id):
         cursor.execute(query, (user_id,))
         chats = cursor.fetchall()
         
-        # Get last message for each chat
+        # Get last message and unread count for each chat
         for chat in chats:
             cursor.execute("""
                 SELECT cm.message, cm.sent_at, u.username, u.first_name
@@ -507,6 +507,14 @@ def get_user_chats(user_id):
                 chat['last_message'] = None
                 chat['last_message_time'] = None
                 chat['last_sender'] = None
+            
+            # Get unread count
+            cursor.execute("""
+                SELECT unread_count FROM unread_messages 
+                WHERE user_id = %s AND chat_id = %s AND chat_type = 'group'
+            """, (user_id, chat['chat_id']))
+            unread = cursor.fetchone()
+            chat['unread_count'] = unread['unread_count'] if unread else 0
         
         return jsonify({"chats": chats}), 200
         
@@ -542,12 +550,12 @@ def get_chat_messages(chat_id):
         cursor.execute("""
             SELECT 
                 cm.message_id,
-                cm.message,
+                cm.message as message_content,
                 cm.sent_at,
-                cm.user_id,
-                u.username,
-                u.first_name,
-                u.last_name
+                cm.user_id as sender_id,
+                u.username as sender_username,
+                u.first_name as sender_first_name,
+                u.last_name as sender_last_name
             FROM chat_messages cm
             JOIN users u ON cm.user_id = u.user_id
             WHERE cm.chat_id = %s
@@ -555,6 +563,13 @@ def get_chat_messages(chat_id):
         """, (chat_id,))
         
         messages = cursor.fetchall()
+        
+        # Mark messages as read for this user
+        cursor.execute("""
+            DELETE FROM unread_messages 
+            WHERE user_id = %s AND chat_id = %s AND chat_type = 'group'
+        """, (user_id, chat_id))
+        conn.commit()
         
         # Convert datetime to string
         for msg in messages:
@@ -570,15 +585,354 @@ def get_chat_messages(chat_id):
         if conn:
             conn.close()
 
-@app.route('/api/chats/<int:chat_id>/messages', methods=['POST'])
-def send_chat_message(chat_id):
-    """Send a message in a chat"""
+@app.route('/api/chats/direct', methods=['POST'])
+def create_direct_chat():
+    """Create a direct chat between two users"""
     data = request.json
     user_id = data.get('user_id')
-    message = data.get('message', '').strip()
+    friend_id = data.get('friend_id')
     
-    if not user_id or not message:
-        return jsonify({"error": "user_id and message required"}), 400
+    if not user_id or not friend_id:
+        return jsonify({"error": "user_id and friend_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if direct chat already exists (works regardless of which user is user1 or user2)
+        cursor.execute("""
+            SELECT chat_id 
+            FROM direct_chats 
+            WHERE (user1_id = %s AND user2_id = %s) 
+               OR (user1_id = %s AND user2_id = %s)
+            LIMIT 1
+        """, (user_id, friend_id, friend_id, user_id))
+        
+        existing_chat = cursor.fetchone()
+        
+        if existing_chat:
+            # Get friend's name for response
+            cursor.execute("SELECT first_name, last_name FROM users WHERE user_id = %s", (friend_id,))
+            friend = cursor.fetchone()
+            chat_name = f"{friend['first_name']} {friend['last_name']}"
+            
+            return jsonify({
+                "chat_id": existing_chat['chat_id'],
+                "chat_name": chat_name,
+                "existed": True
+            }), 200
+        
+        # Get friend's name
+        cursor.execute("SELECT first_name, last_name FROM users WHERE user_id = %s", (friend_id,))
+        friend = cursor.fetchone()
+        
+        # Create new direct chat (LEAST/GREATEST ensures consistent ordering)
+        cursor.execute("""
+            INSERT INTO direct_chats (user1_id, user2_id)
+            VALUES (LEAST(%s, %s), GREATEST(%s, %s))
+        """, (user_id, friend_id, user_id, friend_id))
+        chat_id = cursor.lastrowid
+        
+        conn.commit()
+        
+        chat_name = f"{friend['first_name']} {friend['last_name']}"
+        
+        return jsonify({
+            "chat_id": chat_id,
+            "chat_name": chat_name,
+            "existed": False,
+            "is_direct": True
+        }), 201
+        
+    except Exception as e:
+        print(f"Error creating direct chat: {e}")
+        print(f"User ID: {user_id}, Friend ID: {friend_id}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/chats/direct/user/<int:user_id>', methods=['GET'])
+def get_user_direct_chats(user_id):
+    """Get all direct chats for a user"""
+    include_archived = request.args.get('include_archived', 'false').lower() == 'true'
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Determine which archive column to check
+        query = """
+        SELECT 
+            dc.chat_id,
+            dc.user1_id,
+            dc.user2_id,
+            dc.last_message_at,
+            dc.created_at,
+            CASE 
+                WHEN dc.user1_id = %s THEN dc.archived_by_user1
+                ELSE dc.archived_by_user2
+            END as is_archived
+        FROM direct_chats dc
+        WHERE (dc.user1_id = %s OR dc.user2_id = %s)
+        """
+        
+        if not include_archived:
+            query += """
+            AND ((dc.user1_id = %s AND dc.archived_by_user1 = FALSE) 
+                 OR (dc.user2_id = %s AND dc.archived_by_user2 = FALSE))
+            """
+            cursor.execute(query, (user_id, user_id, user_id, user_id, user_id))
+        else:
+            cursor.execute(query, (user_id, user_id, user_id))
+        
+        direct_chats = cursor.fetchall()
+        
+        # Get chat names and last messages
+        for chat in direct_chats:
+            other_user_id = chat['user2_id'] if chat['user1_id'] == user_id else chat['user1_id']
+            
+            # Get other user's name
+            cursor.execute("SELECT first_name, last_name FROM users WHERE user_id = %s", (other_user_id,))
+            other_user = cursor.fetchone()
+            chat['chat_name'] = f"{other_user['first_name']} {other_user['last_name']}" if other_user else 'User'
+            
+            # Get last message
+            cursor.execute("""
+                SELECT message_content, sent_at 
+                FROM direct_messages 
+                WHERE chat_id = %s 
+                ORDER BY sent_at DESC 
+                LIMIT 1
+            """, (chat['chat_id'],))
+            last_msg = cursor.fetchone()
+            if last_msg:
+                chat['last_message'] = last_msg['message_content'][:50] + ('...' if len(last_msg['message_content']) > 50 else '')
+                chat['last_message_time'] = last_msg['sent_at']
+            
+            # Get unread count
+            cursor.execute("""
+                SELECT unread_count FROM unread_messages 
+                WHERE user_id = %s AND chat_id = %s AND chat_type = 'direct'
+            """, (user_id, chat['chat_id']))
+            unread = cursor.fetchone()
+            chat['unread_count'] = unread['unread_count'] if unread else 0
+        
+        return jsonify({"chats": direct_chats}), 200
+        
+    except Exception as e:
+        print(f"Error fetching direct chats: {e}")
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/chats/direct/<int:chat_id>/archive', methods=['POST'])
+def archive_direct_chat(chat_id):
+    """Archive a direct chat for a user"""
+    data = request.json
+    user_id = data.get('user_id')
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get the chat
+        cursor.execute("""
+            SELECT user1_id, user2_id FROM direct_chats WHERE chat_id = %s
+        """, (chat_id,))
+        chat = cursor.fetchone()
+        
+        if not chat:
+            return jsonify({"error": "Chat not found"}), 404
+        
+        # Archive for the correct user
+        if chat['user1_id'] == user_id:
+            cursor.execute("UPDATE direct_chats SET archived_by_user1 = TRUE WHERE chat_id = %s", (chat_id,))
+        elif chat['user2_id'] == user_id:
+            cursor.execute("UPDATE direct_chats SET archived_by_user2 = TRUE WHERE chat_id = %s", (chat_id,))
+        else:
+            return jsonify({"error": "Access denied"}), 403
+        
+        conn.commit()
+        return jsonify({"success": True}), 200
+        
+    except Exception as e:
+        print(f"Error archiving chat: {e}")
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/chats/direct/<int:chat_id>/messages', methods=['GET'])
+def get_direct_messages(chat_id):
+    """Get messages from a direct chat"""
+    user_id = request.args.get('user_id')
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Verify user is part of this direct chat
+        cursor.execute("""
+            SELECT 1 FROM direct_chats 
+            WHERE chat_id = %s AND (user1_id = %s OR user2_id = %s)
+        """, (chat_id, user_id, user_id))
+        
+        if not cursor.fetchone():
+            return jsonify({"error": "Access denied"}), 403
+        
+        # Get messages
+        cursor.execute("""
+            SELECT 
+                dm.message_id,
+                dm.sender_id,
+                dm.message_content,
+                dm.sent_at,
+                u.username as sender_username,
+                u.first_name as sender_first_name,
+                u.last_name as sender_last_name
+            FROM direct_messages dm
+            JOIN users u ON dm.sender_id = u.user_id
+            WHERE dm.chat_id = %s
+            ORDER BY dm.sent_at ASC
+        """, (chat_id,))
+        
+        messages = cursor.fetchall()
+        
+        # Mark messages as read for this user
+        cursor.execute("""
+            DELETE FROM unread_messages 
+            WHERE user_id = %s AND chat_id = %s AND chat_type = 'direct'
+        """, (user_id, chat_id))
+        conn.commit()
+        
+        # Convert datetime to string
+        for msg in messages:
+            if msg.get('sent_at'):
+                msg['sent_at'] = msg['sent_at'].isoformat()
+        
+        return jsonify({"messages": messages}), 200
+        
+    except Exception as e:
+        print(f"Error fetching direct messages: {e}")
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/chats/direct/<int:chat_id>/messages', methods=['POST'])
+def send_direct_message(chat_id):
+    """Send a message in a direct chat"""
+    data = request.json
+    sender_id = data.get('sender_id') or data.get('user_id')
+    message_content = data.get('message_content', '').strip()
+    
+    if not sender_id or not message_content:
+        return jsonify({"error": "sender_id and message_content required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Verify user is part of this direct chat
+        cursor.execute("""
+            SELECT 1 FROM direct_chats 
+            WHERE chat_id = %s AND (user1_id = %s OR user2_id = %s)
+        """, (chat_id, sender_id, sender_id))
+        
+        if not cursor.fetchone():
+            return jsonify({"error": "Access denied"}), 403
+        
+        # Insert message
+        cursor.execute("""
+            INSERT INTO direct_messages (chat_id, sender_id, message_content)
+            VALUES (%s, %s, %s)
+        """, (chat_id, sender_id, message_content))
+        
+        message_id = cursor.lastrowid
+        
+        # Update last_message_at in direct_chats
+        cursor.execute("""
+            UPDATE direct_chats 
+            SET last_message_at = NOW(),
+                archived_by_user1 = FALSE,
+                archived_by_user2 = FALSE
+            WHERE chat_id = %s
+        """, (chat_id,))
+        
+        # Get the other user in this chat
+        cursor.execute("""
+            SELECT user1_id, user2_id FROM direct_chats WHERE chat_id = %s
+        """, (chat_id,))
+        chat_users = cursor.fetchone()
+        other_user_id = chat_users['user2_id'] if chat_users['user1_id'] == sender_id else chat_users['user1_id']
+        
+        # Update unread count for the other user
+        cursor.execute("""
+            INSERT INTO unread_messages (user_id, chat_id, chat_type, unread_count, last_message_at)
+            VALUES (%s, %s, 'direct', 1, NOW())
+            ON DUPLICATE KEY UPDATE 
+                unread_count = unread_count + 1,
+                last_message_at = NOW()
+        """, (other_user_id, chat_id))
+        
+        conn.commit()
+        
+        # Get the created message with user details
+        cursor.execute("""
+            SELECT 
+                dm.message_id,
+                dm.sender_id,
+                dm.message_content,
+                dm.sent_at,
+                u.username as sender_username,
+                u.first_name as sender_first_name,
+                u.last_name as sender_last_name
+            FROM direct_messages dm
+            JOIN users u ON dm.sender_id = u.user_id
+            WHERE dm.message_id = %s
+        """, (message_id,))
+        
+        new_message = cursor.fetchone()
+        
+        if new_message.get('sent_at'):
+            new_message['sent_at'] = new_message['sent_at'].isoformat()
+        
+        return jsonify({
+            "success": True,
+            "message": new_message
+        }), 201
+        
+    except Exception as e:
+        print(f"Error sending direct message: {e}")
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/chats/<int:chat_id>/messages', methods=['POST'])
+def send_chat_message(chat_id):
+    """Send a message in a group chat"""
+    data = request.json
+    sender_id = data.get('sender_id') or data.get('user_id')
+    message_content = data.get('message_content') or data.get('message', '').strip()
+    
+    if not sender_id or not message_content:
+        return jsonify({"error": "sender_id and message_content required"}), 400
     
     conn = None
     try:
@@ -588,7 +942,7 @@ def send_chat_message(chat_id):
         # Verify user is participant
         cursor.execute("""
             SELECT 1 FROM chat_participants WHERE chat_id = %s AND user_id = %s
-        """, (chat_id, user_id))
+        """, (chat_id, sender_id))
         
         if not cursor.fetchone():
             return jsonify({"error": "Access denied"}), 403
@@ -597,21 +951,39 @@ def send_chat_message(chat_id):
         cursor.execute("""
             INSERT INTO chat_messages (chat_id, user_id, message)
             VALUES (%s, %s, %s)
-        """, (chat_id, user_id, message))
+        """, (chat_id, sender_id, message_content))
         
         message_id = cursor.lastrowid
+        
+        # Get all participants in this chat (except sender)
+        cursor.execute("""
+            SELECT user_id FROM chat_participants 
+            WHERE chat_id = %s AND user_id != %s
+        """, (chat_id, sender_id))
+        participants = cursor.fetchall()
+        
+        # Update unread count for all other participants
+        for participant in participants:
+            cursor.execute("""
+                INSERT INTO unread_messages (user_id, chat_id, chat_type, unread_count, last_message_at)
+                VALUES (%s, %s, 'group', 1, NOW())
+                ON DUPLICATE KEY UPDATE 
+                    unread_count = unread_count + 1,
+                    last_message_at = NOW()
+            """, (participant['user_id'], chat_id))
+        
         conn.commit()
         
         # Get the created message with user details
         cursor.execute("""
             SELECT 
                 cm.message_id,
-                cm.message,
+                cm.message as message_content,
                 cm.sent_at,
-                cm.user_id,
-                u.username,
-                u.first_name,
-                u.last_name
+                cm.user_id as sender_id,
+                u.username as sender_username,
+                u.first_name as sender_first_name,
+                u.last_name as sender_last_name
             FROM chat_messages cm
             JOIN users u ON cm.user_id = u.user_id
             WHERE cm.message_id = %s
@@ -623,7 +995,7 @@ def send_chat_message(chat_id):
         if new_message.get('sent_at'):
             new_message['sent_at'] = new_message['sent_at'].isoformat() if hasattr(new_message['sent_at'], 'isoformat') else str(new_message['sent_at'])
         
-        return jsonify({"message": new_message}), 201
+        return jsonify({"message": new_message, "success": True}), 201
         
     except Exception as e:
         print(f"Error in send_chat_message: {e}")
@@ -1797,6 +2169,179 @@ def create_trip():
         if conn:
             conn.close()
 
+@app.route('/api/trips/<int:trip_id>/members', methods=['GET'])
+def get_trip_members(trip_id):
+    """Get all members of a trip"""
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        query = """
+        SELECT 
+            u.user_id,
+            u.username,
+            u.first_name,
+            u.last_name,
+            tp.role
+        FROM trip_participants tp
+        JOIN users u ON tp.user_id = u.user_id
+        WHERE tp.trip_id = %s
+        ORDER BY 
+            CASE tp.role
+                WHEN 'owner' THEN 1
+                WHEN 'admin' THEN 2
+                ELSE 3
+            END,
+            u.first_name
+        """
+        cursor.execute(query, (trip_id,))
+        members = cursor.fetchall()
+        
+        return jsonify({"members": members}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/trips/<int:trip_id>/members', methods=['POST'])
+def add_trip_member(trip_id):
+    """Add a member to a trip (owner/admin only)"""
+    data = request.json
+    user_id = data.get('user_id')  # Person adding the member
+    member_id = data.get('member_id')  # Person being added
+    
+    if not user_id or not member_id:
+        return jsonify({"error": "user_id and member_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if user is owner or admin
+        cursor.execute("""
+            SELECT role FROM trip_participants
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, user_id))
+        
+        user_role = cursor.fetchone()
+        if not user_role or user_role['role'] not in ['owner', 'admin']:
+            return jsonify({"error": "Only owners and admins can add members"}), 403
+        
+        # Check if member is already in the trip
+        cursor.execute("""
+            SELECT 1 FROM trip_participants
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, member_id))
+        
+        if cursor.fetchone():
+            return jsonify({"error": "User is already a member of this trip"}), 400
+        
+        # Add member to trip
+        cursor.execute("""
+            INSERT INTO trip_participants (trip_id, user_id, role)
+            VALUES (%s, %s, 'member')
+        """, (trip_id, member_id))
+        
+        # Add member to trip's group chat
+        cursor.execute("""
+            SELECT chat_id FROM group_chats WHERE trip_id = %s
+        """, (trip_id,))
+        
+        chat = cursor.fetchone()
+        if chat:
+            cursor.execute("""
+                INSERT INTO chat_participants (chat_id, user_id)
+                VALUES (%s, %s)
+            """, (chat['chat_id'], member_id))
+        
+        # Create notification for the added member
+        cursor.execute("""
+            INSERT INTO trip_notifications (user_id, trip_id, added_by_user_id)
+            VALUES (%s, %s, %s)
+        """, (member_id, trip_id, user_id))
+        
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Member added successfully"}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/api/trips/<int:trip_id>/members/<int:member_id>', methods=['DELETE'])
+def remove_trip_member(trip_id, member_id):
+    """Remove a member from a trip (owner/admin only, cannot remove owner)"""
+    data = request.json
+    user_id = data.get('user_id')  # Person removing the member
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if user is owner or admin
+        cursor.execute("""
+            SELECT role FROM trip_participants
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, user_id))
+        
+        user_role = cursor.fetchone()
+        if not user_role or user_role['role'] not in ['owner', 'admin']:
+            return jsonify({"error": "Only owners and admins can remove members"}), 403
+        
+        # Check if member being removed is the owner
+        cursor.execute("""
+            SELECT role FROM trip_participants
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, member_id))
+        
+        member_role = cursor.fetchone()
+        if member_role and member_role['role'] == 'owner':
+            return jsonify({"error": "Cannot remove the trip owner"}), 400
+        
+        # Remove member from trip
+        cursor.execute("""
+            DELETE FROM trip_participants
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, member_id))
+        
+        # Remove member from trip's group chat
+        cursor.execute("""
+            SELECT chat_id FROM group_chats WHERE trip_id = %s
+        """, (trip_id,))
+        
+        chat = cursor.fetchone()
+        if chat:
+            cursor.execute("""
+                DELETE FROM chat_participants
+                WHERE chat_id = %s AND user_id = %s
+            """, (chat['chat_id'], member_id))
+        
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Member removed successfully"}), 200
+        
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return jsonify({"error": "Database error occurred"}), 500
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
 @app.route('/api/trips/<int:trip_id>', methods=['DELETE'])
 def delete_trip(trip_id):
     """Delete a trip (only owner can delete)"""
@@ -2594,6 +3139,193 @@ def delete_planner_item(planner_id):
         print(f"Database error in delete_planner_item: {e}")
         if conn:
             conn.rollback()
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/notifications/<int:user_id>', methods=['GET'])
+def get_notifications(user_id):
+    """Get all notifications for a user (friend requests, trip additions, recent messages)"""
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        notifications = []
+        
+        # 1. Friend Requests
+        cursor.execute("""
+            SELECT 
+                'friend_request' as type,
+                f.id as notification_id,
+                u.first_name,
+                u.last_name,
+                u.username,
+                f.user_id as sender_id,
+                NULL as trip_id,
+                NULL as chat_id,
+                NULL as message_preview,
+                f.created_at as timestamp
+            FROM friends f
+            JOIN users u ON f.user_id = u.user_id
+            WHERE f.friend_id = %s AND f.status = 'pending'
+        """, (user_id,))
+        notifications.extend(cursor.fetchall())
+        
+        # 2. Trip Addition Notifications
+        cursor.execute("""
+            SELECT 
+                'trip_added' as type,
+                tn.notification_id,
+                u.first_name,
+                u.last_name,
+                u.username,
+                tn.added_by_user_id as sender_id,
+                tn.trip_id,
+                NULL as chat_id,
+                t.trip_name as message_preview,
+                tn.created_at as timestamp
+            FROM trip_notifications tn
+            JOIN users u ON tn.added_by_user_id = u.user_id
+            JOIN trips t ON tn.trip_id = t.trip_id
+            WHERE tn.user_id = %s AND tn.is_read = FALSE
+        """, (user_id,))
+        notifications.extend(cursor.fetchall())
+        
+        # 3. Recent Unread Messages (both group and direct)
+        cursor.execute("""
+            SELECT 
+                'message' as type,
+                um.id as notification_id,
+                um.chat_id,
+                um.chat_type,
+                um.unread_count,
+                um.last_message_at as timestamp
+            FROM unread_messages um
+            WHERE um.user_id = %s AND um.unread_count > 0
+            ORDER BY um.last_message_at DESC
+            LIMIT 10
+        """, (user_id,))
+        
+        unread_messages = cursor.fetchall()
+        
+        # Get chat names and last message preview for unread messages
+        for msg in unread_messages:
+            if msg['chat_type'] == 'group':
+                # Get group chat name
+                cursor.execute("SELECT chat_name FROM group_chats WHERE chat_id = %s", (msg['chat_id'],))
+                chat = cursor.fetchone()
+                msg['chat_name'] = chat['chat_name'] if chat else 'Group Chat'
+                
+                # Get last message preview
+                cursor.execute("""
+                    SELECT cm.message, u.first_name 
+                    FROM chat_messages cm
+                    JOIN users u ON cm.user_id = u.user_id
+                    WHERE cm.chat_id = %s 
+                    ORDER BY cm.sent_at DESC 
+                    LIMIT 1
+                """, (msg['chat_id'],))
+                last_message = cursor.fetchone()
+                if last_message:
+                    preview = last_message['message'][:40] + ('...' if len(last_message['message']) > 40 else '')
+                    msg['message_preview'] = f"{last_message['first_name']}: {preview}"
+                    msg['sender_name'] = last_message['first_name']
+                else:
+                    msg['message_preview'] = f"{msg['unread_count']} new message{'s' if msg['unread_count'] > 1 else ''}"
+            else:
+                # Get other user info for direct chat
+                cursor.execute("""
+                    SELECT user1_id, user2_id FROM direct_chats WHERE chat_id = %s
+                """, (msg['chat_id'],))
+                chat = cursor.fetchone()
+                if chat:
+                    other_user_id = chat['user2_id'] if chat['user1_id'] == user_id else chat['user1_id']
+                    cursor.execute("SELECT first_name, last_name FROM users WHERE user_id = %s", (other_user_id,))
+                    other_user = cursor.fetchone()
+                    msg['chat_name'] = f"{other_user['first_name']} {other_user['last_name']}" if other_user else 'Direct Chat'
+                    msg['first_name'] = other_user['first_name'] if other_user else 'User'
+                    msg['last_name'] = other_user['last_name'] if other_user else ''
+                    
+                    # Get last message preview
+                    cursor.execute("""
+                        SELECT message_content 
+                        FROM direct_messages 
+                        WHERE chat_id = %s 
+                        ORDER BY sent_at DESC 
+                        LIMIT 1
+                    """, (msg['chat_id'],))
+                    last_message = cursor.fetchone()
+                    if last_message:
+                        preview = last_message['message_content'][:40] + ('...' if len(last_message['message_content']) > 40 else '')
+                        msg['message_preview'] = preview
+                    else:
+                        msg['message_preview'] = f"{msg['unread_count']} new message{'s' if msg['unread_count'] > 1 else ''}"
+        
+        notifications.extend(unread_messages)
+        
+        # Sort all notifications by timestamp
+        notifications.sort(key=lambda x: x['timestamp'] if x['timestamp'] else '', reverse=True)
+        
+        # Convert timestamps to ISO format
+        for notif in notifications:
+            if notif.get('timestamp'):
+                notif['timestamp'] = notif['timestamp'].isoformat() if hasattr(notif['timestamp'], 'isoformat') else str(notif['timestamp'])
+        
+        return jsonify({"notifications": notifications}), 200
+        
+    except Exception as e:
+        print(f"Error fetching notifications: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
+def mark_notification_read(notification_id):
+    """Mark a trip notification as read"""
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE trip_notifications 
+            SET is_read = TRUE 
+            WHERE notification_id = %s
+        """, (notification_id,))
+        
+        conn.commit()
+        return jsonify({"success": True}), 200
+        
+    except Exception as e:
+        print(f"Error marking notification as read: {e}")
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/unread/<int:user_id>/<int:chat_id>/<chat_type>', methods=['DELETE'])
+def clear_unread_count(user_id, chat_id, chat_type):
+    """Clear unread count for a specific chat"""
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            DELETE FROM unread_messages 
+            WHERE user_id = %s AND chat_id = %s AND chat_type = %s
+        """, (user_id, chat_id, chat_type))
+        
+        conn.commit()
+        return jsonify({"success": True}), 200
+        
+    except Exception as e:
+        print(f"Error clearing unread count: {e}")
         return jsonify({"error": "Database error"}), 500
     finally:
         if conn:

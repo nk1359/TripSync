@@ -30,20 +30,27 @@
 
 .chat-notification-badge {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 12px;
-  height: 12px;
+  top: -2px;
+  left: -2px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
   background: #ef4444;
-  border-radius: 50%;
+  border-radius: 10px;
   border: 2px solid #18181b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #ffffff;
 }
 
 /* Chat List Panel */
 .floating-chat-panel {
   position: fixed;
   bottom: 90px;
-  right: 20px;
+  right: 90px;
   width: 320px;
   max-height: 500px;
   background: #27272a;
@@ -138,6 +145,27 @@
   padding: 0.5rem;
 }
 
+.chat-section-title {
+  padding: 0.75rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: #18181b;
+  margin: 0.5rem 0 0.25rem 0;
+}
+
+.friend-item .message-icon {
+  color: #a1a1aa;
+  font-size: 1rem;
+  transition: color 0.2s ease;
+}
+
+.friend-item:hover .message-icon {
+  color: #88BDF2;
+}
+
 .chat-list-item {
   display: flex;
   align-items: center;
@@ -207,16 +235,50 @@
   font-size: 0.875rem;
 }
 
+.no-chats-hint {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: #52525b;
+}
+
+.new-messages-divider {
+  display: flex;
+  align-items: center;
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.new-messages-divider::before,
+.new-messages-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid #3f3f46;
+}
+
+.new-messages-divider span {
+  padding: 0 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: #3f3f46;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 /* Chat Windows */
 .chat-windows-container {
   position: fixed;
   bottom: 20px;
-  right: 20px;
+  right: 90px;
   display: flex;
   flex-direction: row-reverse;
   gap: 10px;
   z-index: 998;
   pointer-events: none;
+  transition: right 0.3s ease;
+}
+
+.chat-windows-container.panel-open {
+  right: 430px;
 }
 
 .chat-window {
@@ -334,13 +396,14 @@
   padding: 0.625rem 0.875rem;
   border-radius: 12px;
   font-size: 0.875rem;
+  font-weight: 500;
   line-height: 1.4;
   word-wrap: break-word;
 }
 
 .chat-message.own .message-text {
-  background: linear-gradient(135deg, #88BDF2 0%, #6eaadb 100%);
-  color: #000000;
+  background: #5b9fd8;
+  color: #ffffff;
 }
 
 .message-time {

@@ -1441,6 +1441,13 @@
   transform: translateX(4px);
 }
 
+.trip-action-buttons {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.trip-manage-btn,
 .trip-delete-btn {
   width: 36px;
   height: 36px;
@@ -1454,6 +1461,12 @@
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
+}
+
+.trip-manage-btn:hover {
+  background: #88BDF2;
+  border-color: #88BDF2;
+  color: #000000;
 }
 
 .trip-delete-btn:hover {
@@ -2002,4 +2015,173 @@
   .place-image-container {
     height: 180px;
   }
+}
+
+/* Manage Members Modal */
+.manage-members-modal {
+  background: #27272a;
+  border-radius: 16px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #3f3f46;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  position: relative;
+}
+
+.manage-members-modal .modal-header {
+  padding: 2rem;
+  border-bottom: 1px solid #3f3f46;
+}
+
+.manage-members-modal .modal-header h2 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.manage-members-modal .modal-header p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #a1a1aa;
+}
+
+.manage-members-modal .modal-body {
+  padding: 1.5rem 2rem 2rem 2rem;
+  overflow-y: auto;
+}
+
+.members-section {
+  margin-bottom: 2rem;
+}
+
+.members-section:last-child {
+  margin-bottom: 0;
+}
+
+.members-section h3 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 1rem 0;
+}
+
+.members-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.member-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  background: #1f1f23;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.member-card:hover {
+  border-color: #52525b;
+  background: #18181b;
+}
+
+.member-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #52525b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+/* Colorful avatars for members */
+.member-card:nth-child(6n+1) .member-avatar { background: linear-gradient(135deg, #88BDF2, #6eaadb); color: #000000; }
+.member-card:nth-child(6n+2) .member-avatar { background: linear-gradient(135deg, #ec4899, #db2777); }
+.member-card:nth-child(6n+3) .member-avatar { background: linear-gradient(135deg, #a78bfa, #8b5cf6); }
+.member-card:nth-child(6n+4) .member-avatar { background: linear-gradient(135deg, #10b981, #059669); }
+.member-card:nth-child(6n+5) .member-avatar { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.member-card:nth-child(6n) .member-avatar { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #000000; }
+
+.member-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.member-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 0.25rem;
+}
+
+.member-role {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #88BDF2;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.member-username {
+  font-size: 0.875rem;
+  color: #a1a1aa;
+}
+
+.add-member-btn,
+.remove-member-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.add-member-btn {
+  background: transparent;
+  border-color: #52525b;
+  color: #a1a1aa;
+}
+
+.add-member-btn:hover {
+  background: #88BDF2;
+  border-color: #88BDF2;
+  color: #000000;
+}
+
+.remove-member-btn {
+  background: transparent;
+  border-color: #52525b;
+  color: #a1a1aa;
+}
+
+.remove-member-btn:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+.empty-message {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: #71717a;
+  font-size: 0.875rem;
 }

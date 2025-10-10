@@ -33,29 +33,28 @@ const Layout = ({ children }) => {
   const profileRef = useRef(null);
   const notificationRef = useRef(null);
 
-  // Friend request notification state
-  const [friendRequests, setFriendRequests] = useState([]);
+  // Notification state
+  const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
 
-  // Simple profile state
-  const [showFriendSearchModal, setShowFriendSearchModal] = useState(false);
-
-  // Fetch pending friend requests once the user is loaded
+  // Fetch all notifications
   useEffect(() => {
     if (user?.user_id) {
-      fetchFriendRequests();
+      fetchNotifications();
+      const interval = setInterval(fetchNotifications, 10000); // Refresh every 10 seconds
+      return () => clearInterval(interval);
     }
   }, [user]);
 
-  const fetchFriendRequests = () => {
+  const fetchNotifications = () => {
     if (!user?.user_id) return;
     
     axios
-      .get(`http://localhost:5000/api/friend_requests/${user.user_id}`)
+      .get(`http://localhost:5000/api/notifications/${user.user_id}`)
       .then((res) => {
-        setFriendRequests(res.data.friend_requests || []);
+        setNotifications(res.data.notifications || []);
       })
-      .catch((err) => console.error(err));
+      .catch((err) => console.error('Error fetching notifications:', err));
   };
 
   // Improved toggle nav function for mobile
@@ -83,7 +82,7 @@ const Layout = ({ children }) => {
     }
   };
 
-  const handleNotificationClick = (e) => {
+  const handleNotificationBellClick = (e) => {
     e.stopPropagation();
     setShowNotifications(!showNotifications);
     
@@ -193,28 +192,55 @@ const Layout = ({ children }) => {
         request_id: requestId
       })
       .then(() => {
-        // Remove the accepted request from the notification bar
-        setFriendRequests(friendRequests.filter(fr => fr.id !== requestId));
-        // Show a success message
-        setFriendSearchMessage("Friend request accepted!");
+        fetchNotifications(); // Refresh notifications
       })
       .catch((err) => {
         console.error(err);
-        setFriendSearchMessage("Error accepting friend request.");
       });
   };
 
-  // Function to reject a friend request
   const rejectFriendRequest = (requestId) => {
     axios
       .post('http://localhost:5000/api/reject_friend_request', {
         request_id: requestId
       })
       .then(() => {
-        // Remove the rejected request from the list
-        setFriendRequests(friendRequests.filter(fr => fr.id !== requestId));
+        fetchNotifications(); // Refresh notifications
       })
       .catch((err) => console.error(err));
+  };
+
+  const handleNotificationClick = (notification) => {
+    if (notification.type === 'friend_request') {
+      // Already handled by accept/reject buttons
+      return;
+    } else if (notification.type === 'trip_added') {
+      // Mark as read and navigate to planner
+      axios.post(`http://localhost:5000/api/notifications/${notification.notification_id}/read`)
+        .then(() => fetchNotifications())
+        .catch(err => console.error(err));
+      navigate('/planner');
+      setShowNotifications(false);
+    } else if (notification.type === 'message') {
+      // Clear unread count for this chat
+      axios.delete(`http://localhost:5000/api/unread/${user.user_id}/${notification.chat_id}/${notification.chat_type}`)
+        .then(() => {
+          fetchNotifications(); // Refresh notifications
+          // Trigger chat list refresh
+          window.dispatchEvent(new CustomEvent('refreshChats'));
+        })
+        .catch(err => console.error(err));
+      
+      // Open the chat
+      window.dispatchEvent(new CustomEvent('openChat', { 
+        detail: { 
+          chat_id: notification.chat_id,
+          chat_name: notification.chat_name,
+          is_direct: notification.chat_type === 'direct'
+        } 
+      }));
+      setShowNotifications(false);
+    }
   };
 
   // Get the appropriate button based on friendship status
@@ -294,56 +320,89 @@ const Layout = ({ children }) => {
                 <div 
                   ref={notificationRef}
                   className="notification-bell" 
-                  onClick={handleNotificationClick}
+                  onClick={handleNotificationBellClick}
                 >
                   <FaBell />
-                  {friendRequests.length > 0 && (
-                    <span className="notification-badge">{friendRequests.length}</span>
+                  {notifications.length > 0 && (
+                    <span className="notification-badge">{notifications.length}</span>
                   )}
                   
                   {showNotifications && (
                     <div className="notification-dropdown">
                       <div className="dropdown-header">
-                        Friend Requests
+                        <h3>Notifications</h3>
+                        <span className="notification-count">{notifications.length}</span>
                       </div>
                       <div className="notification-list">
-                        {friendRequests.length > 0 ? (
-                          friendRequests.map((request) => (
-                            <div key={request.id} className="notification-item">
+                        {notifications.length > 0 ? (
+                          notifications.map((notification, index) => (
+                            <div 
+                              key={`${notification.type}-${notification.notification_id || index}`} 
+                              className={`notification-item ${notification.type}`}
+                              onClick={() => handleNotificationClick(notification)}
+                            >
+                              <div className="notification-avatar">
+                                {notification.type === 'friend_request' && notification.first_name.charAt(0).toUpperCase()}
+                                {notification.type === 'trip_added' && notification.first_name.charAt(0).toUpperCase()}
+                                {notification.type === 'message' && notification.chat_name.charAt(0).toUpperCase()}
+                              </div>
                               <div className="notification-content">
-                                <div className="notification-avatar">
-                                  {request.first_name.charAt(0)}
-                                </div>
-                                <div className="notification-details">
-                                  <div className="notification-title">
-                                    {request.first_name} {request.last_name}
-                                  </div>
-                                  <div className="notification-subtitle">
-                                    @{request.username}
-                                  </div>
-                                </div>
+                                {notification.type === 'friend_request' && (
+                                  <>
+                                    <div className="notification-title">
+                                      {notification.first_name} {notification.last_name}
+                                    </div>
+                                    <div className="notification-subtitle">
+                                      Sent you a friend request
+                                    </div>
+                                  </>
+                                )}
+                                {notification.type === 'trip_added' && (
+                                  <>
+                                    <div className="notification-title">
+                                      {notification.first_name} {notification.last_name}
+                                    </div>
+                                    <div className="notification-subtitle">
+                                      Added you to {notification.message_preview}
+                                    </div>
+                                  </>
+                                )}
+                                {notification.type === 'message' && (
+                                  <>
+                                    <div className="notification-title">
+                                      {notification.chat_name}
+                                    </div>
+                                    <div className="notification-subtitle">
+                                      {notification.message_preview}
+                                    </div>
+                                  </>
+                                )}
                               </div>
-                              <div className="notification-actions">
-                                <button 
-                                  className="accept-button" 
-                                  onClick={() => acceptFriendRequest(request.id)}
-                                  aria-label="Accept friend request"
-                                >
-                                  <FaCheckCircle />
-                                </button>
-                                <button 
-                                  className="reject-button"
-                                  onClick={() => rejectFriendRequest(request.id)}
-                                  aria-label="Reject friend request"
-                                >
-                                  <FaTimesCircle />
-                                </button>
-                              </div>
+                              <div className="unread-indicator"></div>
+                              {notification.type === 'friend_request' && (
+                                <div className="notification-actions" onClick={(e) => e.stopPropagation()}>
+                                  <button 
+                                    className="accept-button" 
+                                    onClick={() => acceptFriendRequest(notification.notification_id)}
+                                    aria-label="Accept"
+                                  >
+                                    <FaCheckCircle />
+                                  </button>
+                                  <button 
+                                    className="reject-button"
+                                    onClick={() => rejectFriendRequest(notification.notification_id)}
+                                    aria-label="Reject"
+                                  >
+                                    <FaTimesCircle />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           ))
                         ) : (
                           <div className="empty-notifications">
-                            No pending friend requests.
+                            <FaBell style={{fontSize: '2rem', color: '#52525b', marginBottom: '0.5rem'}} />
+                            <p>No new notifications</p>
                           </div>
                         )}
                       </div>

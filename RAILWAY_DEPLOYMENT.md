@@ -22,7 +22,16 @@ git push origin main
 2. Click "Start a New Project"
 3. Sign up with GitHub
 
-### 3. **Deploy Backend (Flask + MySQL)**
+### 3. **Important: Build Configuration**
+
+Your app now uses `cross-env` to ensure builds work everywhere:
+```json
+"build": "cross-env CI=false react-scripts build"
+```
+
+This prevents ESLint warnings from blocking deployment. ✅
+
+### 4. **Deploy Backend (Flask + MySQL)**
 
 #### A. Create New Project from GitHub
 1. Click "New Project" → "Deploy from GitHub repo"
@@ -90,6 +99,8 @@ REACT_APP_API_URL=https://your-backend-url.up.railway.app
 ```
 
 Replace `your-backend-url` with your actual Railway backend URL.
+
+**Note:** Railway automatically runs `npm install` which includes `cross-env` from `package.json`. ✅
 
 ### 6. **Initialize Database**
 

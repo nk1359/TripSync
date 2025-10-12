@@ -9,12 +9,12 @@ import googlemaps
 # Load environment variables
 load_dotenv()
 
-# Database configuration
+# Database configuration - works with Railway (production) and local development
 db_config = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': os.getenv('DB_PASSWORD'),
-    'database': 'tripsync'
+    'host': os.getenv('MYSQLHOST', 'localhost'),
+    'user': os.getenv('MYSQLUSER', 'root'),
+    'password': os.getenv('MYSQLPASSWORD', os.getenv('DB_PASSWORD', '')),
+    'database': os.getenv('MYSQLDATABASE', 'tripsync')
 }
 
 # Initialize Flask app

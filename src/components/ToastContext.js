@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext } from 'react';
 import Toast from './Toast';
+import ConfirmDialog from './ConfirmDialog';
 
 const ToastContext = createContext();
 
@@ -13,8 +14,9 @@ export const useToast = () => {
 
 export const ToastProvider = ({ children }) => {
   const [toasts, setToasts] = useState([]);
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
-  const showToast = (message, type = 'info', duration = 3000) => {
+  const showToast = (message, type = 'info', duration) => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, message, type, duration }]);
   };
@@ -23,8 +25,28 @@ export const ToastProvider = ({ children }) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
+  const showConfirm = ({ title, message, confirmText, cancelText, type = 'warning' }) => {
+    return new Promise((resolve) => {
+      setConfirmDialog({
+        title,
+        message,
+        confirmText,
+        cancelText,
+        type,
+        onConfirm: () => {
+          setConfirmDialog(null);
+          resolve(true);
+        },
+        onCancel: () => {
+          setConfirmDialog(null);
+          resolve(false);
+        }
+      });
+    });
+  };
+
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <ToastContext.Provider value={{ showToast, showConfirm }}>
       {children}
       <div className="toast-container">
         {toasts.map(toast => (
@@ -37,6 +59,7 @@ export const ToastProvider = ({ children }) => {
           />
         ))}
       </div>
+      {confirmDialog && <ConfirmDialog {...confirmDialog} />}
     </ToastContext.Provider>
   );
 };

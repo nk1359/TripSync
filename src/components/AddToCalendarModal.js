@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { FaTimes, FaCalendarPlus, FaCheckCircle } from 'react-icons/fa';
+import { useToast } from './ToastContext';
 import './styles/Calendar.css';
 
 const AddToCalendarModal = ({ place, onClose }) => {
+  const { showToast } = useToast();
   const [groups, setGroups] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -49,7 +51,7 @@ const AddToCalendarModal = ({ place, onClose }) => {
     e.preventDefault();
     
     if (!eventForm.title.trim() || !eventForm.startDate || !eventForm.groupId) {
-      alert('Please fill in all required fields');
+      showToast('Please fill in all required fields', 'error');
       return;
     }
     
@@ -71,7 +73,7 @@ const AddToCalendarModal = ({ place, onClose }) => {
       }, 2000);
     } catch (error) {
       console.error("Error creating event:", error.response?.data || error.message);
-      alert(`Failed to add event: ${error.response?.data?.error || 'Unknown error'}`);
+      showToast(`Failed to add event: ${error.response?.data?.error || 'Unknown error'}`, 'error');
     }
   };
 

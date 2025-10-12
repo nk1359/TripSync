@@ -1110,7 +1110,7 @@ def autocomplete_cities():
 
 @app.route('/api/search', methods=['GET'])
 def search_places():
-    """Search for places using Google Places API"""
+    """Search for places using Google Places API with pagination support via next_page_token"""
     if not gmaps:
         return jsonify({"error": "Google Places API is not configured"}), 500
     
@@ -1120,28 +1120,40 @@ def search_places():
     city = request.args.get('city', '')
     state = request.args.get('state', '')
     country = request.args.get('country', 'USA')
+    page_token = request.args.get('page_token', None)  # Get next_page_token from frontend
     
     # Build location string
     location_parts = [part for part in [city, state, country] if part]
     location = ', '.join(location_parts) if location_parts else None
     
-    if not location and not place_type:
+    if not location and not place_type and not page_token:
         return jsonify({"error": "Either location or place_type is required"}), 400
     
     try:
-        # Build search query
-        search_query = f"{place_type} and {category}" if place_type and category else (place_type or category)
+        # If we have a page_token, use it to get the next page
+        if page_token:
+            print(f"🔄 Fetching next page using token: {page_token[:30]}...")
+            try:
+                # When using page_token, we don't need to pass query parameter
+                results = gmaps.places(query='', page_token=page_token)
+                print(f"✅ Successfully fetched next page")
+            except Exception as token_error:
+                print(f"❌ Error using page token: {str(token_error)}")
+                return jsonify({"error": f"Failed to fetch next page: {str(token_error)}"}), 500
+        else:
+            # Build search query
+            search_query = f"{place_type} and {category}" if place_type and category else (place_type or category)
+            
+            # If we have a location, add it to the query
+            if location:
+                search_query = f"{search_query} in {location}"
+            
+            print(f"🔍 Searching for: {search_query}")
+            
+            # Perform text search
+            results = gmaps.places(query=search_query)
         
-        # If we have a location, add it to the query
-        if location:
-            search_query = f"{search_query} in {location}"
-        
-        print(f"Searching for: {search_query}")
-        
-        # Perform text search
-        results = gmaps.places(query=search_query)
-        
-        print(f"Processing {len(results.get('results', []))} search results")
+        print(f"📍 Processing {len(results.get('results', []))} search results")
         
         formatted_places = []
         
@@ -1194,9 +1206,16 @@ def search_places():
                 print(f"Error processing place: {e}")
                 continue
         
+        # Get next_page_token for loading more results
+        next_page_token = results.get('next_page_token')
+        
+        print(f"✅ Returning {len(formatted_places)} places, next_page_token: {'Yes' if next_page_token else 'No'}")
+        
         return jsonify({
             'places': formatted_places,
-            'total': len(formatted_places)
+            'total': len(formatted_places),
+            'next_page_token': next_page_token,
+            'has_more': next_page_token is not None
         }), 200
         
     except Exception as e:
@@ -2124,7 +2143,10 @@ def get_user_trips(user_id):
         
         # Get trips where user is a participant
         query = """
-        SELECT DISTINCT t.*, tp.role
+        SELECT DISTINCT 
+            t.*, 
+            tp.role,
+            (SELECT COUNT(*) FROM trip_participants WHERE trip_id = t.trip_id) as member_count
         FROM trips t
         JOIN trip_participants tp ON t.trip_id = tp.trip_id
         WHERE tp.user_id = %s
@@ -3358,8 +3380,11 @@ def create_planner_item():
     notes = data.get('notes')
     created_by = data.get('created_by')
     google_place_id = data.get('google_place_id')
+    latitude = data.get('latitude')
+    longitude = data.get('longitude')
     
     print(f"[ADD-ITEM] Creating planner item: {item_name} for trip {trip_id}")
+    print(f"[ADD-ITEM] Coordinates: lat={latitude}, lng={longitude}, place_id={google_place_id}")
     
     if not all([trip_id, item_name, start_date, created_by]):
         return jsonify({"error": "Missing required fields"}), 400
@@ -3380,12 +3405,12 @@ def create_planner_item():
         # Create planner item
         item_query = """
         INSERT INTO planner (trip_id, item_name, item_type, description, location, 
-                           start_date, end_date, start_time, end_time, cost, notes, created_by, google_place_id, order_index)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           start_date, end_date, start_time, end_time, cost, notes, created_by, google_place_id, latitude, longitude, order_index)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         cursor.execute(item_query, (
             trip_id, item_name, item_type, description, location,
-            start_date, end_date, start_time, end_time, cost, notes, created_by, google_place_id, next_order
+            start_date, end_date, start_time, end_time, cost, notes, created_by, google_place_id, latitude, longitude, next_order
         ))
         planner_id = cursor.lastrowid
         
@@ -3972,6 +3997,138 @@ def update_planner_item_time(planner_id):
     finally:
         if conn:
             conn.close()
+
+@app.route('/api/planner/recommendations', methods=['POST'])
+def get_recommendations():
+    """Get nearby place recommendations based on location and type"""
+    if not gmaps:
+        return jsonify({"error": "Google Maps API not configured"}), 500
+    
+    data = request.json
+    latitude = data.get('latitude')
+    longitude = data.get('longitude')
+    place_type = data.get('type', 'all')  # Default to all types
+    radius = data.get('radius', 5000)  # Default 5km radius
+    page_token = data.get('page_token')  # For pagination
+    
+    # Latitude and longitude are required (for distance calculations)
+    # unless we're using page_token without them
+    if not latitude or not longitude:
+        if not page_token:
+            return jsonify({"error": "Latitude and longitude required"}), 400
+    
+    try:
+        # Map of user-friendly names to Google Places API types
+        type_mapping = {
+            'parks': 'park',
+            'museums': 'museum',
+            'restaurants': 'restaurant',
+            'cafes': 'cafe',
+            'shopping': 'shopping_mall',
+            'attractions': 'tourist_attraction',
+            'entertainment': 'amusement_park',
+            'nightlife': 'night_club',
+            'landmarks': 'point_of_interest',
+            'hikes': 'park',  # Parks often include hiking trails
+            'beaches': 'natural_feature',
+            'hotels': 'lodging',
+            'art': 'art_gallery',
+            'food': 'restaurant',
+            'nature': 'park',
+            'all': None  # No type filter for "all"
+        }
+        
+        # Get the API type from mapping, or use the provided type directly
+        api_type = type_mapping.get(place_type.lower(), place_type)
+        
+        # Search for nearby places
+        # For popular places, use rank_by='prominence' to get most popular first
+        if page_token:
+            # If page_token is provided, use it to get next page
+            places_result = gmaps.places_nearby(page_token=page_token)
+        elif api_type:
+            places_result = gmaps.places_nearby(
+                location=(latitude, longitude),
+                radius=radius,
+                type=api_type
+            )
+        else:
+            # For "all", search without type filter to get most popular places
+            places_result = gmaps.places_nearby(
+                location=(latitude, longitude),
+                radius=radius
+            )
+        
+        recommendations = []
+        origin = f"{latitude},{longitude}" if latitude and longitude else None
+        
+        if places_result.get('results'):
+            # Get all results (Google returns up to 20 per request)
+            results = places_result['results']
+            
+            print(f"📍 Fetching {len(results)} results for type '{place_type}' (API type: {api_type})")
+            
+            # Get place details including photos for each result
+            for place in results:
+                # Log place types for debugging
+                place_types = place.get('types', [])
+                print(f"  - {place.get('name')}: types = {place_types}")
+                place_location = place['geometry']['location']
+                destination = f"{place_location['lat']},{place_location['lng']}"
+                
+                # Calculate distance (if origin is available)
+                distance_text = "N/A"
+                duration_text = "N/A"
+                
+                if origin:
+                    distance_result = gmaps.distance_matrix(
+                        origins=origin,
+                        destinations=destination,
+                        mode='driving'
+                    )
+                    
+                    if distance_result['rows'] and distance_result['rows'][0]['elements']:
+                        element = distance_result['rows'][0]['elements'][0]
+                        if element['status'] == 'OK':
+                            distance_text = element['distance']['text']
+                            duration_text = element['duration']['text']
+                
+                # Get photo URL if available
+                photo_url = None
+                if place.get('photos') and len(place['photos']) > 0:
+                    photo_reference = place['photos'][0].get('photo_reference')
+                    if photo_reference:
+                        photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
+                
+                recommendation = {
+                    'place_id': place.get('place_id'),
+                    'name': place.get('name'),
+                    'address': place.get('vicinity', 'Address not available'),
+                    'rating': place.get('rating'),
+                    'user_ratings_total': place.get('user_ratings_total'),
+                    'types': place.get('types', []),
+                    'latitude': place_location['lat'],
+                    'longitude': place_location['lng'],
+                    'distance': distance_text,
+                    'duration': duration_text,
+                    'photo_url': photo_url,
+                    'open_now': place.get('opening_hours', {}).get('open_now')
+                }
+                
+                recommendations.append(recommendation)
+        
+        # Get next_page_token if available
+        next_page_token = places_result.get('next_page_token')
+        
+        return jsonify({
+            'recommendations': recommendations,
+            'count': len(recommendations),
+            'next_page_token': next_page_token
+        }), 200
+        
+    except Exception as e:
+        print(f"Error fetching recommendations: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/planner/items/<int:planner_id>', methods=['DELETE'])
 def delete_planner_item(planner_id):

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from './AuthContext';
+import { useToast } from './ToastContext';
 import Layout from './Layout';
 import axios from 'axios';
 import { FaUserFriends, FaSearch, FaTimesCircle, FaCheckCircle, FaComments } from 'react-icons/fa';
@@ -7,6 +8,7 @@ import './styles/Friends.css';
 
 const Friends = () => {
   const { user } = useContext(AuthContext);
+  const { showConfirm } = useToast();
   const [activeTab, setActiveTab] = useState('friends'); // 'friends' | 'suggested' | 'requests' | 'search'
   const [requestsSubTab, setRequestsSubTab] = useState('incoming'); // 'incoming' | 'pending'
   const [friends, setFriends] = useState([]);
@@ -110,7 +112,15 @@ const Friends = () => {
   };
 
   const removeFriend = async (friendId) => {
-    if (!window.confirm('Remove this friend?')) return;
+    const confirmed = await showConfirm({
+      title: 'Remove Friend',
+      message: 'Are you sure you want to remove this friend? This action cannot be undone.',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+      type: 'danger'
+    });
+    
+    if (!confirmed) return;
 
     try {
       await axios.post('http://localhost:5000/api/remove_friend', {

@@ -2,14 +2,18 @@ import React, { useEffect } from 'react';
 import { FaCheckCircle, FaExclamationCircle, FaInfoCircle, FaTimes } from 'react-icons/fa';
 import './styles/Toast.css';
 
-const Toast = ({ message, type = 'info', onClose, duration = 3000 }) => {
+const Toast = ({ message, type = 'info', onClose, duration }) => {
+  // Default durations: success is quick (2s), error lasts longer (3.5s)
+  const defaultDuration = type === 'success' ? 2000 : type === 'error' ? 3500 : 3000;
+  const toastDuration = duration || defaultDuration;
+
   useEffect(() => {
     const timer = setTimeout(() => {
       onClose();
-    }, duration);
+    }, toastDuration);
 
     return () => clearTimeout(timer);
-  }, [duration, onClose]);
+  }, [toastDuration, onClose]);
 
   const getIcon = () => {
     switch (type) {

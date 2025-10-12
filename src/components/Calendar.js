@@ -13,9 +13,11 @@ import {
   FaChevronRight
 } from 'react-icons/fa';
 import Layout from './Layout';
+import { useToast } from './ToastContext';
 import './styles/Calendar.css';
 
 const Calendar = () => {
+  const { showToast, showConfirm } = useToast();
   const [events, setEvents] = useState([]);
   const [groups, setGroups] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -169,7 +171,7 @@ const Calendar = () => {
     e.preventDefault();
     
     if (!eventForm.title.trim() || !eventForm.startDate || !eventForm.groupId) {
-      alert('Please fill in all required fields');
+      showToast('Please fill in all required fields', 'error');
       return;
     }
     
@@ -203,12 +205,20 @@ const Calendar = () => {
       fetchEvents(); // Refresh events
     } catch (error) {
       console.error("Error saving event:", error.response?.data || error.message);
-      alert(`Failed to save event: ${error.response?.data?.error || 'Unknown error'}`);
+      showToast(`Failed to save event: ${error.response?.data?.error || 'Unknown error'}`, 'error');
     }
   };
 
   const handleDeleteEvent = async (eventId) => {
-    if (!window.confirm('Are you sure you want to delete this event?')) return;
+    const confirmed = await showConfirm({
+      title: 'Delete Event',
+      message: 'Are you sure you want to delete this event? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      type: 'danger'
+    });
+    
+    if (!confirmed) return;
     
     try {
       await axios.delete(`http://localhost:5000/api/calendar/events/${eventId}?user_id=${currentUserId}`);
@@ -216,7 +226,7 @@ const Calendar = () => {
       setShowEventDetails(false); // Close the details modal if open
     } catch (error) {
       console.error("Error deleting event:", error.response?.data || error.message);
-      alert(`Failed to delete event: ${error.response?.data?.error || 'Unknown error'}`);
+      showToast(`Failed to delete event: ${error.response?.data?.error || 'Unknown error'}`, 'error');
     }
   };
 

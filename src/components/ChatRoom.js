@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { FaArrowLeft, FaPaperPlane, FaUsers } from 'react-icons/fa';
+import { useToast } from './ToastContext';
 import './styles/ChatRoom.css';
 
 const ChatRoom = ({ chat, onBack }) => {
+  const { showToast } = useToast();
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -60,7 +62,7 @@ const ChatRoom = ({ chat, onBack }) => {
       });
     } catch (error) {
       console.error("Error sending message:", error);
-      alert('Failed to send message');
+      showToast('Failed to send message', 'error');
       fetchMessages();
     }
   };

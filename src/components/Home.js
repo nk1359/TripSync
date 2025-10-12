@@ -11,7 +11,7 @@ import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft
 const Home = () => {
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
-  const { showToast } = useToast();
+  const { showToast, showConfirm } = useToast();
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [welcomeData, setWelcomeData] = useState(null);
   const [selectedPlaceForModal, setSelectedPlaceForModal] = useState(null);
@@ -28,12 +28,8 @@ const Home = () => {
   const [loading, setLoading] = useState(true);
   const [searchLoading, setSearchLoading] = useState(false);
   const [viewMode, setViewMode] = useState('homepage');
-  const [pagination, setPagination] = useState({
-    page: 1,
-    perPage: 20,
-    total: 0,
-    totalPages: 0
-  });
+  const [nextPageToken, setNextPageToken] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState(null);
 
   // Hero slideshow state
@@ -271,9 +267,15 @@ const Home = () => {
 
   // Delete trip (only for owners)
   const handleDeleteTrip = async (tripId) => {
-    if (!window.confirm('Are you sure you want to delete this trip? This action cannot be undone.')) {
-      return;
-    }
+    const confirmed = await showConfirm({
+      title: 'Delete Trip',
+      message: 'Are you sure you want to delete this trip? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      type: 'danger'
+    });
+    
+    if (!confirmed) return;
 
     try {
       const response = await fetch(`http://localhost:5000/api/trips/${tripId}`, {
@@ -472,9 +474,15 @@ const Home = () => {
 
   // Remove member from trip
   const handleRemoveMemberFromTrip = async (memberId) => {
-    if (!window.confirm('Are you sure you want to remove this member from the trip?')) {
-      return;
-    }
+    const confirmed = await showConfirm({
+      title: 'Remove Member',
+      message: 'Are you sure you want to remove this member from the trip?',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+      type: 'danger'
+    });
+    
+    if (!confirmed) return;
 
     try {
       const response = await fetch(`http://localhost:5000/api/trips/${manageTripId}/members/${memberId}`, {
@@ -950,27 +958,25 @@ const Home = () => {
     }
   };
 
-  const handleSearch = async (page = 1) => {
+  const handleSearch = async () => {
     if (!searchForm.placeType && searchForm.selectedCategories.length === 0) {
-      alert('Please fill in the place type field or select categories');
+      showToast('Please fill in the place type field or select categories', 'error');
       return;
     }
 
     if (searchForm.selectedCategories.length > 0 && !searchForm.city) {
-      alert('When using categories, please select a city');
+      showToast('When using categories, please select a city', 'error');
       return;
     }
 
     // Immediately switch to results view and show skeleton
     setViewMode('search');
-    setSearchResults([]); // Clear old results
+    setSearchResults([]);
+    setNextPageToken(null);
     setSearchLoading(true);
     
     try {
-      const params = new URLSearchParams({
-        page: page,
-        per_page: pagination.perPage
-      });
+      const params = new URLSearchParams();
 
       if (searchForm.placeType) {
         params.append('place_type', searchForm.placeType);
@@ -993,17 +999,11 @@ const Home = () => {
       const response = await fetch(`http://localhost:5000/api/search?${params}`);
       const data = await response.json();
       
-      console.log('🔍 Search results:', data);
-      console.log('🔍 Places array:', data.places);
-      console.log('🔍 Places length:', data.places ? data.places.length : 'undefined');
+      console.log('📦 Search response:', data);
+      console.log(`✅ Fetched ${data.places?.length || 0} results, has_more: ${data.has_more}`);
       
       setSearchResults(data.places || []);
-      setPagination({
-        ...pagination,
-        page: data.page || page,
-        total: data.total || 0,
-        totalPages: data.total_pages || 1
-      });
+      setNextPageToken(data.next_page_token || null);
       setSearchLoading(false);
       
       // Update URL with search parameters
@@ -1011,17 +1011,47 @@ const Home = () => {
       urlParams.set('place_type', searchForm.placeType);
       if (searchForm.state) urlParams.set('state', searchForm.state);
       if (searchForm.city) urlParams.set('city', searchForm.city);
-      if (page > 1) urlParams.set('page', page.toString());
       
       const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
       window.history.pushState({}, '', newUrl);
-      
-      console.log('🔍 Search results set:', data.places || []);
-      console.log('🔍 View mode:', 'search');
     } catch (error) {
       console.error('❌ Error searching places:', error);
       setSearchLoading(false);
     }
+  };
+
+  const handleLoadMore = async () => {
+    if (!nextPageToken || loadingMore) return;
+    
+    setLoadingMore(true);
+    
+    try {
+      const params = new URLSearchParams({
+        page_token: nextPageToken
+      });
+
+      console.log('🔄 Loading more results...');
+
+      const response = await fetch(`http://localhost:5000/api/search?${params}`);
+      const data = await response.json();
+      
+      console.log(`✅ Loaded ${data.places?.length || 0} more results, has_more: ${data.has_more}`);
+      
+      setSearchResults(prev => [...prev, ...(data.places || [])]);
+      setNextPageToken(data.next_page_token || null);
+    } catch (error) {
+      console.error('❌ Error loading more results:', error);
+      showToast('Failed to load more results', 'error');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const getDisplayableResults = (results) => {
+    const count = results.length;
+    const remainder = count % 4;
+    if (remainder === 0) return results;
+    return results.slice(0, count - remainder);
   };
 
   const handleInputChange = (field, value) => {
@@ -1075,13 +1105,12 @@ const Home = () => {
   const handleDirectPlaceSearch = async (place) => {
     setSearchLoading(true);
     setViewMode('search');
+    setNextPageToken(null);
     
     try {
       // Search for the specific place using its name
       const params = new URLSearchParams({
-        place_type: place.main_text,
-        page: 1,
-        per_page: pagination.perPage
+        place_type: place.main_text
       });
 
       console.log('🔍 Direct place search for:', place.main_text);
@@ -1092,12 +1121,7 @@ const Home = () => {
       console.log('🔍 Direct search results:', data);
       
       setSearchResults(data.places || []);
-      setPagination({
-        ...pagination,
-        page: data.page || 1,
-        total: data.total || 0,
-        totalPages: data.total_pages || 1
-      });
+      setNextPageToken(data.next_page_token || null);
       setSearchLoading(false);
       
       // Update URL with search parameters
@@ -1218,7 +1242,7 @@ const Home = () => {
 
   const renderSearchSkeleton = () => (
     <div className="places-grid">
-      {[1, 2, 3, 4, 5, 6].map(i => renderSkeletonCard())}
+      {[1, 2, 3, 4, 5, 6, 7, 8].map(i => renderSkeletonCard())}
       </div>
     );
 
@@ -1294,7 +1318,15 @@ const Home = () => {
                             </span>
                           )}
                           
-                          <span className="trip-member-info">
+                          <button 
+                            className="trip-member-info-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setManageTripId(trip.trip_id);
+                              setShowManageMembersModal(true);
+                            }}
+                            title={isOwner ? "Manage members" : "View members & request to add"}
+                          >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                               <circle cx="9" cy="7" r="4"></circle>
@@ -1302,7 +1334,7 @@ const Home = () => {
                               <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                             </svg>
                             {trip.member_count || 1} {(trip.member_count || 1) === 1 ? 'member' : 'members'}
-                          </span>
+                          </button>
                         </div>
                         
                         {trip.description && (
@@ -1311,22 +1343,6 @@ const Home = () => {
                       </div>
                       
                       <div className="trip-card-actions">
-                        <button 
-                          className="trip-manage-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setManageTripId(trip.trip_id);
-                            setShowManageMembersModal(true);
-                          }}
-                          title={isOwner ? "Manage members" : "View members & request to add"}
-                        >
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="9" cy="7" r="4"></circle>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                          </svg>
-                        </button>
                         {isOwner && (
                           <button 
                             className="trip-delete-btn"
@@ -1694,26 +1710,17 @@ const Home = () => {
         ) : searchResults.length > 0 ? (
           <>
             <div className="places-grid">
-              {searchResults.map(place => renderPlaceCard(place))}
+              {getDisplayableResults(searchResults).map(place => renderPlaceCard(place))}
             </div>
-            {pagination.totalPages > 1 && (
-              <div className="pagination">
+            
+            {nextPageToken && (
+              <div style={{ textAlign: 'center', marginTop: '2rem', marginBottom: '2rem' }}>
                 <button 
-                  className="pagination-button"
-                  onClick={() => handleSearch(pagination.page - 1)}
-                  disabled={pagination.page <= 1 || searchLoading}
+                  className="load-more-btn"
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
                 >
-                  <FaChevronLeft />
-                </button>
-                <span className="pagination-info">
-                  Page {pagination.page} of {pagination.totalPages}
-                </span>
-                <button 
-                  className="pagination-button"
-                  onClick={() => handleSearch(pagination.page + 1)}
-                  disabled={pagination.page >= pagination.totalPages || searchLoading}
-                >
-                  <FaChevronRight />
+                  {loadingMore ? 'Loading...' : 'Load More Results'}
                 </button>
               </div>
             )}

@@ -105,7 +105,7 @@ function Login() {
     <div className="auth-page">
       <div className="auth-container">
         <div className="auth-logo">
-          <img src="/trip sync - login.png" alt="TripSync" className="auth-logo-image" />
+          <img src="/Trip Sync - login.png" alt="TripSync" className="auth-logo-image" />
         </div>
         
         <div className="auth-tabs">

@@ -1,2 +1,2 @@
-web: npm run build && python App.py
+web: python App.py
 

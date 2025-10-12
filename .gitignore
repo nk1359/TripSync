@@ -12,7 +12,7 @@
 /coverage
 
 # production
-/build
+# /build  # Temporarily committed for Railway deployment
 
 # misc
 .DS_Store

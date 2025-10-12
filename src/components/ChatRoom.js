@@ -3,6 +3,7 @@ import axios from 'axios';
 import { FaArrowLeft, FaPaperPlane, FaUsers } from 'react-icons/fa';
 import { useToast } from './ToastContext';
 import './styles/ChatRoom.css';
+import API_URL from '../config';
 
 const ChatRoom = ({ chat, onBack }) => {
   const { showToast } = useToast();
@@ -29,7 +30,7 @@ const ChatRoom = ({ chat, onBack }) => {
     setLoading(true);
     try {
       const response = await axios.get(
-        `http://localhost:5000/api/chats/${chat.chat_id}/messages?user_id=${currentUserId}`
+        `${API_URL}/api/chats/${chat.chat_id}/messages?user_id=${currentUserId}`
       );
       setMessages(response.data.messages || []);
       setLoading(false);
@@ -56,7 +57,7 @@ const ChatRoom = ({ chat, onBack }) => {
     setMessageText('');
 
     try {
-      await axios.post(`http://localhost:5000/api/chats/${chat.chat_id}/messages`, {
+      await axios.post(`${API_URL}/api/chats/${chat.chat_id}/messages`, {
         user_id: currentUserId,
         message: tempMessage.message
       });

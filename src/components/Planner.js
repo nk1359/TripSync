@@ -17,6 +17,7 @@ import {
 } from 'react-icons/fa';
 import Layout from './Layout';
 import './styles/Planner.css';
+import API_URL from '../config';
 
 const Planner = () => {
   const [trips, setTrips] = useState([]);
@@ -167,7 +168,7 @@ const Planner = () => {
 
   const fetchTrips = async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/trips/${currentUserId}`);
+      const response = await axios.get(`${API_URL}/api/trips/${currentUserId}`);
       console.log('Fetched trips:', response.data.trips);
       
       // Sort trips by start date - most recent upcoming trip first
@@ -207,7 +208,7 @@ const Planner = () => {
     if (!selectedTrip) return;
     
     try {
-      const response = await axios.get(`http://localhost:5000/api/planner/${selectedTrip.trip_id}`);
+      const response = await axios.get(`${API_URL}/api/planner/${selectedTrip.trip_id}`);
       setPlannerItems(response.data.items || []);
       
       // Automatically fix missing Google Place IDs (only on first load)
@@ -215,7 +216,7 @@ const Planner = () => {
         const itemsWithoutPlaceId = response.data.items?.filter(item => !item.google_place_id && item.item_type !== 'custom') || [];
         if (itemsWithoutPlaceId.length > 0) {
           console.log('[AUTO-FIX] Found items without Google Place IDs, fixing automatically...');
-          axios.post(`http://localhost:5000/api/planner/${selectedTrip.trip_id}/fix-place-ids`)
+          axios.post(`${API_URL}/api/planner/${selectedTrip.trip_id}/fix-place-ids`)
             .then(res => {
               console.log('[AUTO-FIX] Place IDs updated:', res.data);
               // Refresh to get photos (skip auto-fix to avoid loop)
@@ -229,7 +230,7 @@ const Planner = () => {
       // Calculate distances in background if not skipping
       if (!skipDistanceCalc) {
         setTimeout(() => {
-          axios.post(`http://localhost:5000/api/planner/${selectedTrip.trip_id}/calculate-distances`)
+          axios.post(`${API_URL}/api/planner/${selectedTrip.trip_id}/calculate-distances`)
             .then(res => {
               console.log('[DISTANCE] Background calculation complete:', res.data);
               // Refresh items to get updated distances
@@ -259,7 +260,7 @@ const Planner = () => {
 
   const fetchTripMembers = async (tripId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${tripId}/members`);
+      const response = await fetch(`${API_URL}/api/trips/${tripId}/members`);
       const data = await response.json();
       setTripMembers(data.members || []);
       
@@ -268,12 +269,12 @@ const Planner = () => {
       setCurrentUserRole(currentMember?.role || null);
       
       // Fetch friends who aren't already members
-      const friendsResponse = await fetch(`http://localhost:5000/api/friends/${currentUserId}`);
+      const friendsResponse = await fetch(`${API_URL}/api/friends/${currentUserId}`);
       const friendsData = await friendsResponse.json();
       const memberIds = (data.members || []).map(m => m.user_id);
       
       // Fetch sent invitations
-      const invitationsResponse = await fetch(`http://localhost:5000/api/trips/${tripId}/sent-invitations?user_id=${currentUserId}`);
+      const invitationsResponse = await fetch(`${API_URL}/api/trips/${tripId}/sent-invitations?user_id=${currentUserId}`);
       let invitedUserIds = [];
       if (invitationsResponse.ok) {
         const invitationsData = await invitationsResponse.json();
@@ -284,7 +285,7 @@ const Planner = () => {
       // Fetch my pending requests (for non-owners)
       let myRequestedUserIds = [];
       if (currentMember && !['owner', 'admin'].includes(currentMember.role)) {
-        const myRequestsResponse = await fetch(`http://localhost:5000/api/trips/${tripId}/my-requests?user_id=${currentUserId}`);
+        const myRequestsResponse = await fetch(`${API_URL}/api/trips/${tripId}/my-requests?user_id=${currentUserId}`);
         if (myRequestsResponse.ok) {
           const myRequestsData = await myRequestsResponse.json();
           setMyPendingRequests(myRequestsData.requests || []);
@@ -312,7 +313,7 @@ const Planner = () => {
 
   const fetchPendingRequests = async (tripId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${tripId}/member-requests?user_id=${currentUserId}`);
+      const response = await fetch(`${API_URL}/api/trips/${tripId}/member-requests?user_id=${currentUserId}`);
       if (response.ok) {
         const data = await response.json();
         setPendingRequests(data.requests || []);
@@ -324,7 +325,7 @@ const Planner = () => {
 
   const handleRequestAddMember = async (friendId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${selectedTrip.trip_id}/member-requests`, {
+      const response = await fetch(`${API_URL}/api/trips/${selectedTrip.trip_id}/member-requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -349,7 +350,7 @@ const Planner = () => {
 
   const handleAddMemberToTrip = async (friendId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${selectedTrip.trip_id}/member-requests`, {
+      const response = await fetch(`${API_URL}/api/trips/${selectedTrip.trip_id}/member-requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -384,7 +385,7 @@ const Planner = () => {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${selectedTrip.trip_id}/members/${memberId}`, {
+      const response = await fetch(`${API_URL}/api/trips/${selectedTrip.trip_id}/members/${memberId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: currentUserId })
@@ -405,7 +406,7 @@ const Planner = () => {
 
   const handleApproveRequest = async (requestId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${selectedTrip.trip_id}/member-requests/${requestId}/approve`, {
+      const response = await fetch(`${API_URL}/api/trips/${selectedTrip.trip_id}/member-requests/${requestId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: currentUserId })
@@ -428,7 +429,7 @@ const Planner = () => {
 
   const handleRejectRequest = async (requestId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${selectedTrip.trip_id}/member-requests/${requestId}/reject`, {
+      const response = await fetch(`${API_URL}/api/trips/${selectedTrip.trip_id}/member-requests/${requestId}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: currentUserId })
@@ -489,7 +490,7 @@ const Planner = () => {
       // For "all" type, use "tourist_attraction" as fallback for better results
       const typeToSend = filterType === 'all' ? 'tourist_attraction' : filterType;
       
-      const response = await axios.post('http://localhost:5000/api/planner/recommendations', {
+      const response = await axios.post(`${API_URL}/api/planner/recommendations`, {
         latitude: lastItem.latitude,
         longitude: lastItem.longitude,
         type: typeToSend,
@@ -537,7 +538,7 @@ const Planner = () => {
     try {
       const typeToSend = filterType === 'all' ? 'tourist_attraction' : filterType;
       
-      const response = await axios.post('http://localhost:5000/api/planner/recommendations', {
+      const response = await axios.post(`${API_URL}/api/planner/recommendations`, {
         latitude: lastItem.latitude,
         longitude: lastItem.longitude,
         type: typeToSend,
@@ -572,7 +573,7 @@ const Planner = () => {
       // For "all" type, use "tourist_attraction" as fallback for better results
       const typeToSend = filterType === 'all' ? 'tourist_attraction' : filterType;
       
-      const response = await axios.post('http://localhost:5000/api/planner/recommendations', {
+      const response = await axios.post(`${API_URL}/api/planner/recommendations`, {
         latitude: lastItem.latitude,
         longitude: lastItem.longitude,
         type: typeToSend,
@@ -605,7 +606,7 @@ const Planner = () => {
     setLoadingMoreRecommendations(true);
     
     try {
-      const response = await axios.post('http://localhost:5000/api/planner/recommendations', {
+      const response = await axios.post(`${API_URL}/api/planner/recommendations`, {
         page_token: modalNextPageToken,
         latitude: modalOriginCoords.latitude,
         longitude: modalOriginCoords.longitude
@@ -687,7 +688,7 @@ const Planner = () => {
     console.log('📍 Final item type:', itemType);
     
     try {
-      const response = await axios.post('http://localhost:5000/api/planner/items', {
+      const response = await axios.post(`${API_URL}/api/planner/items`, {
         trip_id: selectedTrip.trip_id,
         item_name: recommendation.name,
         location: recommendation.address,
@@ -779,7 +780,7 @@ const Planner = () => {
     setPlannerItems(prevItems => [...prevItems, tempItem]);
     
     try {
-      const response = await axios.post('http://localhost:5000/api/planner/items', {
+      const response = await axios.post(`${API_URL}/api/planner/items`, {
         trip_id: selectedTrip.trip_id,
         item_name: itemName,
         item_type: 'custom',
@@ -841,7 +842,7 @@ const Planner = () => {
     setPlannerItems(prevItems => prevItems.filter(item => item.planner_id !== itemId));
     
     try {
-      await axios.delete(`http://localhost:5000/api/planner/items/${itemId}?user_id=${currentUserId}`);
+      await axios.delete(`${API_URL}/api/planner/items/${itemId}?user_id=${currentUserId}`);
     } catch (error) {
       console.error("Error deleting item:", error.response?.data || error.message);
       // Revert on error
@@ -861,7 +862,7 @@ const Planner = () => {
     );
     
     try {
-      await axios.put(`http://localhost:5000/api/planner/items/${itemId}/notes`, {
+      await axios.put(`${API_URL}/api/planner/items/${itemId}/notes`, {
         notes: newNote,
         user_id: currentUserId
       });
@@ -966,12 +967,12 @@ const Planner = () => {
       console.log('[DRAG] Saving order to backend:', itemsOrder);
       
       // Send order update to backend
-      axios.post('http://localhost:5000/api/planner/items/reorder', {
+      axios.post(`${API_URL}/api/planner/items/reorder`, {
         items: itemsOrder
       }).then(() => {
         console.log('[DRAG] Order saved, recalculating distances...');
         // Trigger distance recalculation after reordering
-        return axios.post(`http://localhost:5000/api/planner/${selectedTrip.trip_id}/calculate-distances`);
+        return axios.post(`${API_URL}/api/planner/${selectedTrip.trip_id}/calculate-distances`);
       }).then(() => {
         console.log('[DRAG] Distances recalculated, refreshing items...');
         // Refresh items to get updated distances
@@ -982,7 +983,7 @@ const Planner = () => {
       
       // Update backend date if moving to different day
       if (draggedItem.start_date !== targetDay) {
-        axios.put(`http://localhost:5000/api/planner/items/${draggedItem.planner_id}`, {
+        axios.put(`${API_URL}/api/planner/items/${draggedItem.planner_id}`, {
           start_date: targetDay,
           end_date: targetDay,
           user_id: currentUserId
@@ -1023,7 +1024,7 @@ const Planner = () => {
     
     // Sync with server in background
     try {
-      await axios.put(`http://localhost:5000/api/planner/items/${draggedItem.planner_id}`, {
+      await axios.put(`${API_URL}/api/planner/items/${draggedItem.planner_id}`, {
         start_date: targetDay,
         end_date: targetDay,
         user_id: currentUserId

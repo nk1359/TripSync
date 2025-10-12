@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import './styles/Register.css';
+import API_URL from '../config';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -38,7 +39,7 @@ const Register = () => {
 
     try {
       // Replace the URL with your backend endpoint
-      const res = await axios.post('http://localhost:5000/api/register', payload);
+      const res = await axios.post(`${API_URL}/api/register`, payload);
       if (res.status === 201) {
         setSuccess("Account created successfully!");
         setError("");

@@ -5,6 +5,7 @@ import { FaComments, FaUsers } from 'react-icons/fa';
 import Layout from './Layout';
 import ChatRoom from './ChatRoom';
 import './styles/Chats.css';
+import API_URL from '../config';
 
 const Chats = () => {
   const [chats, setChats] = useState([]);
@@ -27,7 +28,7 @@ const Chats = () => {
   const fetchChats = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`http://localhost:5000/api/chats/user/${currentUserId}`);
+      const response = await axios.get(`${API_URL}/api/chats/user/${currentUserId}`);
       setChats(response.data.chats || []);
       setLoading(false);
     } catch (error) {

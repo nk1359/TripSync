@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { FaComments, FaTimes, FaMinus, FaPaperPlane, FaChevronUp, FaUser } from 'react-icons/fa';
 import './styles/FloatingChat.css';
+import API_URL from '../config';
 
 const FloatingChat = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -86,7 +87,7 @@ const FloatingChat = () => {
 
   const fetchChats = async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/chats/user/${currentUser.user_id}`);
+      const response = await axios.get(`${API_URL}/api/chats/user/${currentUser.user_id}`);
       console.log('[FLOATING-CHAT] Fetched chats:', response.data);
       setChats(response.data.chats || []);
     } catch (error) {
@@ -96,7 +97,7 @@ const FloatingChat = () => {
 
   const fetchDirectChats = async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/chats/direct/user/${currentUser.user_id}?include_archived=${showArchived}`);
+      const response = await axios.get(`${API_URL}/api/chats/direct/user/${currentUser.user_id}?include_archived=${showArchived}`);
       console.log('[FLOATING-CHAT] Fetched direct chats:', response.data);
       setDirectChats(response.data.chats || []);
     } catch (error) {
@@ -106,7 +107,7 @@ const FloatingChat = () => {
 
   const fetchFriends = async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/friends/${currentUser.user_id}`);
+      const response = await axios.get(`${API_URL}/api/friends/${currentUser.user_id}`);
       console.log('[FLOATING-CHAT] Fetched friends:', response.data);
       setFriends(response.data.friends || []);
     } catch (error) {
@@ -116,7 +117,7 @@ const FloatingChat = () => {
 
   const archiveChat = async (chatId, chatType) => {
     try {
-      await axios.post(`http://localhost:5000/api/chats/${chatType}/${chatId}/archive`, {
+      await axios.post(`${API_URL}/api/chats/${chatType}/${chatId}/archive`, {
         user_id: currentUser.user_id
       });
       if (chatType === 'direct') {
@@ -164,7 +165,7 @@ const FloatingChat = () => {
       }
 
       // Create new direct chat
-      const response = await axios.post('http://localhost:5000/api/chats/direct', {
+      const response = await axios.post(`${API_URL}/api/chats/direct`, {
         user_id: currentUser.user_id,
         friend_id: friend.user_id
       });
@@ -356,8 +357,8 @@ const ChatWindow = ({ chat, index, onClose, onToggleMinimize, currentUserId, isR
   const fetchMessages = async () => {
     try {
       const endpoint = chat.is_direct 
-        ? `http://localhost:5000/api/chats/direct/${chat.chat_id}/messages?user_id=${currentUserId}`
-        : `http://localhost:5000/api/chats/${chat.chat_id}/messages?user_id=${currentUserId}`;
+        ? `${API_URL}/api/chats/direct/${chat.chat_id}/messages?user_id=${currentUserId}`
+        : `${API_URL}/api/chats/${chat.chat_id}/messages?user_id=${currentUserId}`;
       
       const response = await axios.get(endpoint);
       const fetchedMessages = response.data.messages || [];
@@ -384,8 +385,8 @@ const ChatWindow = ({ chat, index, onClose, onToggleMinimize, currentUserId, isR
 
     try {
       const endpoint = chat.is_direct
-        ? `http://localhost:5000/api/chats/direct/${chat.chat_id}/messages`
-        : `http://localhost:5000/api/chats/${chat.chat_id}/messages`;
+        ? `${API_URL}/api/chats/direct/${chat.chat_id}/messages`
+        : `${API_URL}/api/chats/${chat.chat_id}/messages`;
       
       await axios.post(endpoint, {
         sender_id: currentUserId,

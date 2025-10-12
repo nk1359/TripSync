@@ -7,6 +7,7 @@ import './styles/Home.css';
 import AddToCalendarModal from './AddToCalendarModal';
 import DateRangePicker from './DateRangePicker';
 import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft, FaChevronRight, FaTimes } from 'react-icons/fa';
+import API_URL from '../config';
 
 const Home = () => {
   const { user } = useContext(AuthContext);
@@ -69,7 +70,7 @@ const Home = () => {
   
   const fetchFriendsForTrip = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/friends/${user.user_id}`);
+      const response = await fetch(`${API_URL}/api/friends/${user.user_id}`);
       const data = await response.json();
       setTripFriends(data.friends || []);
     } catch (error) {
@@ -182,7 +183,7 @@ const Home = () => {
     if (!user) return;
     
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${user.user_id}`);
+      const response = await fetch(`${API_URL}/api/trips/${user.user_id}`);
       const data = await response.json();
       setTrips(data.trips || []);
     } catch (error) {
@@ -203,7 +204,7 @@ const Home = () => {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${tripId}`, {
+      const response = await fetch(`${API_URL}/api/trips/${tripId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id })
@@ -226,7 +227,7 @@ const Home = () => {
   // Fetch members for a trip
   const fetchTripMembers = async (tripId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${tripId}/members`);
+      const response = await fetch(`${API_URL}/api/trips/${tripId}/members`);
       const data = await response.json();
       setTripMembers(data.members || []);
       
@@ -236,12 +237,12 @@ const Home = () => {
       setCurrentUserRole(userRole);
       
       // Fetch all friends
-      const friendsResponse = await fetch(`http://localhost:5000/api/friends/${user.user_id}`);
+      const friendsResponse = await fetch(`${API_URL}/api/friends/${user.user_id}`);
       const friendsData = await friendsResponse.json();
       const memberIds = (data.members || []).map(m => m.user_id);
       
       // Fetch sent invitations
-      const invitationsResponse = await fetch(`http://localhost:5000/api/trips/${tripId}/sent-invitations?user_id=${user.user_id}`);
+      const invitationsResponse = await fetch(`${API_URL}/api/trips/${tripId}/sent-invitations?user_id=${user.user_id}`);
       let invitedUserIds = [];
       if (invitationsResponse.ok) {
         const invitationsData = await invitationsResponse.json();
@@ -252,7 +253,7 @@ const Home = () => {
       // Fetch my pending requests (for non-owners)
       let myRequestedUserIds = [];
       if (userRole && !['owner', 'admin'].includes(userRole)) {
-        const myRequestsResponse = await fetch(`http://localhost:5000/api/trips/${tripId}/my-requests?user_id=${user.user_id}`);
+        const myRequestsResponse = await fetch(`${API_URL}/api/trips/${tripId}/my-requests?user_id=${user.user_id}`);
         if (myRequestsResponse.ok) {
           const myRequestsData = await myRequestsResponse.json();
           setMyPendingRequests(myRequestsData.requests || []);
@@ -283,7 +284,7 @@ const Home = () => {
   // Fetch pending member requests (for owners/admins)
   const fetchPendingRequests = async (tripId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${tripId}/member-requests?user_id=${user.user_id}`);
+      const response = await fetch(`${API_URL}/api/trips/${tripId}/member-requests?user_id=${user.user_id}`);
       if (response.ok) {
         const data = await response.json();
         setPendingRequests(data.requests || []);
@@ -297,7 +298,7 @@ const Home = () => {
   // Request to add a member (for non-owners)
   const handleRequestAddMember = async (friendId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${manageTripId}/member-requests`, {
+      const response = await fetch(`${API_URL}/api/trips/${manageTripId}/member-requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -324,7 +325,7 @@ const Home = () => {
   // Approve member request (for owners/admins)
   const handleApproveRequest = async (requestId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${manageTripId}/member-requests/${requestId}/approve`, {
+      const response = await fetch(`${API_URL}/api/trips/${manageTripId}/member-requests/${requestId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id })
@@ -350,7 +351,7 @@ const Home = () => {
   // Reject member request (for owners/admins)
   const handleRejectRequest = async (requestId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${manageTripId}/member-requests/${requestId}/reject`, {
+      const response = await fetch(`${API_URL}/api/trips/${manageTripId}/member-requests/${requestId}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id })
@@ -373,7 +374,7 @@ const Home = () => {
   // Send invitation to join trip (for owners/admins)
   const handleAddMemberToTrip = async (friendId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${manageTripId}/member-requests`, {
+      const response = await fetch(`${API_URL}/api/trips/${manageTripId}/member-requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -410,7 +411,7 @@ const Home = () => {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${manageTripId}/members/${memberId}`, {
+      const response = await fetch(`${API_URL}/api/trips/${manageTripId}/members/${memberId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id })
@@ -477,7 +478,7 @@ const Home = () => {
     console.log('ðŸ“ Adding to planner:', itemData);
     
     try {
-      const response = await fetch('http://localhost:5000/api/planner/items', {
+      const response = await fetch(`${API_URL}/api/planner/items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemData)
@@ -543,7 +544,7 @@ const Home = () => {
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/autocomplete/cities?query=${encodeURIComponent(query)}`);
+      const response = await fetch(`${API_URL}/api/autocomplete/cities?query=${encodeURIComponent(query)}`);
       const data = await response.json();
       
       const formatted = (data || []).map(item => {
@@ -646,7 +647,7 @@ const Home = () => {
 
     try {
       // Create trip without automatically adding members
-      const response = await fetch('http://localhost:5000/api/trips', {
+      const response = await fetch(`${API_URL}/api/trips`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -667,7 +668,7 @@ const Home = () => {
         // Send friend requests for each selected friend
         if (selectedFriends.length > 0) {
           const requestPromises = selectedFriends.map(friendId =>
-            fetch(`http://localhost:5000/api/trips/${newTripId}/member-requests`, {
+            fetch(`${API_URL}/api/trips/${newTripId}/member-requests`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -767,7 +768,7 @@ const Home = () => {
           async (position) => {
             const { latitude, longitude } = position.coords;
             // Simple nearby search with minimal API calls
-            const response = await fetch(`http://localhost:5000/api/search?place_type=popular attractions&page=1&per_page=4`);
+            const response = await fetch(`${API_URL}/api/search?place_type=popular attractions&page=1&per_page=4`);
             const data = await response.json();
             setNearbySpots(data.places?.slice(0, 4) || []);
           },
@@ -832,7 +833,7 @@ const Home = () => {
     
     // Fetch place details to get all photos
     try {
-      const response = await fetch(`http://localhost:5000/api/place/${place.place_id}`);
+      const response = await fetch(`${API_URL}/api/place/${place.place_id}`);
       const data = await response.json();
       
       // Use all photos from the API response

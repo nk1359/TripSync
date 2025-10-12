@@ -6,6 +6,7 @@ import Layout from './Layout';
 import AddToCalendarModal from './AddToCalendarModal';
 import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import './styles/Home.css';
+import API_URL from '../config';
 
 const Search = () => {
   const { user } = useContext(AuthContext);
@@ -120,7 +121,7 @@ const Search = () => {
     if (!user) return;
     
     try {
-      const response = await fetch(`http://localhost:5000/api/trips/${user.user_id}`);
+      const response = await fetch(`${API_URL}/api/trips/${user.user_id}`);
       const data = await response.json();
       setTrips(data.trips || []);
     } catch (error) {
@@ -177,7 +178,7 @@ const Search = () => {
     };
     
     try {
-      const response = await fetch('http://localhost:5000/api/planner/items', {
+      const response = await fetch(`${API_URL}/api/planner/items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemData)
@@ -219,7 +220,7 @@ const Search = () => {
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/autocomplete?query=${encodeURIComponent(query)}`);
+      const response = await fetch(`${API_URL}/api/autocomplete?query=${encodeURIComponent(query)}`);
       const data = await response.json();
       
       const formatted = (data || []).map(item => {
@@ -248,7 +249,7 @@ const Search = () => {
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/autocomplete/cities?query=${encodeURIComponent(query)}`);
+      const response = await fetch(`${API_URL}/api/autocomplete/cities?query=${encodeURIComponent(query)}`);
       const data = await response.json();
       
       const formatted = (data || []).map(item => {
@@ -309,7 +310,7 @@ const Search = () => {
     setNextPageToken(null);
     
     try {
-      const response = await fetch(`http://localhost:5000/api/search?place_type=${encodeURIComponent(place.main_text)}`);
+      const response = await fetch(`${API_URL}/api/search?place_type=${encodeURIComponent(place.main_text)}`);
       const data = await response.json();
       
       setSearchResults(data.places || []);
@@ -334,7 +335,7 @@ const Search = () => {
       if (city) params.append('city', city);
       if (state) params.append('state', state);
 
-      const response = await fetch(`http://localhost:5000/api/search?${params}`);
+      const response = await fetch(`${API_URL}/api/search?${params}`);
       const data = await response.json();
       
       setSearchResults(data.places || []);
@@ -391,7 +392,7 @@ const Search = () => {
         params.append('categories', searchForm.selectedCategories.join(','));
       }
 
-      const response = await fetch(`http://localhost:5000/api/search?${params}`);
+      const response = await fetch(`${API_URL}/api/search?${params}`);
       const data = await response.json();
       
       setSearchResults(data.places || []);
@@ -410,7 +411,7 @@ const Search = () => {
     setLoadingMore(true);
     
     try {
-      const response = await fetch(`http://localhost:5000/api/search?page_token=${nextPageToken}`);
+      const response = await fetch(`${API_URL}/api/search?page_token=${nextPageToken}`);
       const data = await response.json();
       
       setSearchResults(prev => [...prev, ...(data.places || [])]);
@@ -431,7 +432,7 @@ const Search = () => {
     setPlaceImages([]); // Clear previous images
     
     try {
-      const response = await fetch(`http://localhost:5000/api/place/${place.place_id}`);
+      const response = await fetch(`${API_URL}/api/place/${place.place_id}`);
       const data = await response.json();
       
       let images = [];

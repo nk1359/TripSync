@@ -15,6 +15,7 @@ import {
 import Layout from './Layout';
 import { useToast } from './ToastContext';
 import './styles/Calendar.css';
+import API_URL from '../config';
 
 const Calendar = () => {
   const { showToast, showConfirm } = useToast();
@@ -75,7 +76,7 @@ const Calendar = () => {
 
   const fetchGroups = async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/calendar/groups/${currentUserId}`);
+      const response = await axios.get(`${API_URL}/api/calendar/groups/${currentUserId}`);
       setGroups(response.data.groups || []);
       
       // If no group is selected and there are groups, select the first one
@@ -97,7 +98,7 @@ const Calendar = () => {
       const startDateStr = startOfMonth.toISOString().split('T')[0];
       const endDateStr = endOfMonth.toISOString().split('T')[0];
       
-      let url = `http://localhost:5000/api/calendar/events?user_id=${currentUserId}&start_date=${startDateStr}&end_date=${endDateStr}`;
+      let url = `${API_URL}/api/calendar/events?user_id=${currentUserId}&start_date=${startDateStr}&end_date=${endDateStr}`;
       
       if (selectedGroup) {
         url += `&group_id=${selectedGroup}`;
@@ -178,7 +179,7 @@ const Calendar = () => {
     try {
       if (isEditMode) {
         // Update existing event
-        await axios.put(`http://localhost:5000/api/calendar/events/${currentEventId}`, {
+        await axios.put(`${API_URL}/api/calendar/events/${currentEventId}`, {
           user_id: currentUserId,
           title: eventForm.title,
           description: eventForm.description,
@@ -189,7 +190,7 @@ const Calendar = () => {
         });
       } else {
         // Create new event
-        await axios.post('http://localhost:5000/api/calendar/events', {
+        await axios.post(`${API_URL}/api/calendar/events`, {
           title: eventForm.title,
           description: eventForm.description,
           start_date: eventForm.startDate,
@@ -221,7 +222,7 @@ const Calendar = () => {
     if (!confirmed) return;
     
     try {
-      await axios.delete(`http://localhost:5000/api/calendar/events/${eventId}?user_id=${currentUserId}`);
+      await axios.delete(`${API_URL}/api/calendar/events/${eventId}?user_id=${currentUserId}`);
       fetchEvents(); // Refresh events
       setShowEventDetails(false); // Close the details modal if open
     } catch (error) {

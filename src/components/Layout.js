@@ -18,6 +18,7 @@ import {
 } from 'react-icons/fa';
 import axios from 'axios';
 import './styles/Layout.css';
+import API_URL from '../config';
 
 const Layout = ({ children }) => {
   const navigate = useNavigate();
@@ -51,7 +52,7 @@ const Layout = ({ children }) => {
     if (!user?.user_id) return;
     
     axios
-      .get(`http://localhost:5000/api/notifications/${user.user_id}`)
+      .get(`${API_URL}/api/notifications/${user.user_id}`)
       .then((res) => {
         setNotifications(res.data.notifications || []);
       })
@@ -143,7 +144,7 @@ const Layout = ({ children }) => {
     setFriendSearchMessage("Searching...");
     
     axios
-      .get(`http://localhost:5000/api/users?search=${encodeURIComponent(friendSearchQuery)}&current_user_id=${user.user_id}`)
+      .get(`${API_URL}/api/users?search=${encodeURIComponent(friendSearchQuery)}&current_user_id=${user.user_id}`)
       .then((res) => {
         setFriendSearchResults(res.data.users || []);
         setFriendSearchMessage(
@@ -165,7 +166,7 @@ const Layout = ({ children }) => {
     if (!user) return;
     
     axios
-      .post('http://localhost:5000/api/send_friend_request', {
+      .post(`${API_URL}/api/send_friend_request`, {
         user_id: user.user_id,
         friend_id: friendId,
       })
@@ -190,7 +191,7 @@ const Layout = ({ children }) => {
   // Function to accept a friend request
   const acceptFriendRequest = (requestId) => {
     axios
-      .post(`http://localhost:5000/api/accept_friend_request/${requestId}`, {})
+      .post(`${API_URL}/api/accept_friend_request/${requestId}`, {})
       .then(() => {
         fetchNotifications(); // Refresh notifications
       })
@@ -201,7 +202,7 @@ const Layout = ({ children }) => {
 
   const rejectFriendRequest = (requestId) => {
     axios
-      .post(`http://localhost:5000/api/reject_friend_request/${requestId}`, {})
+      .post(`${API_URL}/api/reject_friend_request/${requestId}`, {})
       .then(() => {
         fetchNotifications(); // Refresh notifications
       })
@@ -210,7 +211,7 @@ const Layout = ({ children }) => {
 
   const acceptTripInvitation = (invitationId) => {
     axios
-      .post(`http://localhost:5000/api/trip-invitations/${invitationId}/accept`, {
+      .post(`${API_URL}/api/trip-invitations/${invitationId}/accept`, {
         user_id: user.user_id
       })
       .then((response) => {
@@ -226,7 +227,7 @@ const Layout = ({ children }) => {
 
   const declineTripInvitation = (invitationId) => {
     axios
-      .post(`http://localhost:5000/api/trip-invitations/${invitationId}/decline`, {
+      .post(`${API_URL}/api/trip-invitations/${invitationId}/decline`, {
         user_id: user.user_id
       })
       .then(() => {
@@ -251,14 +252,14 @@ const Layout = ({ children }) => {
       return;
     } else if (notification.type === 'trip_added') {
       // Mark as read and navigate to planner
-      axios.post(`http://localhost:5000/api/notifications/${notification.notification_id}/read`)
+      axios.post(`${API_URL}/api/notifications/${notification.notification_id}/read`)
         .then(() => fetchNotifications())
         .catch(err => console.error(err));
       navigate('/planner');
       setShowNotifications(false);
     } else if (notification.type === 'message') {
       // Clear unread count for this chat
-      axios.delete(`http://localhost:5000/api/unread/${user.user_id}/${notification.chat_id}/${notification.chat_type}`)
+      axios.delete(`${API_URL}/api/unread/${user.user_id}/${notification.chat_id}/${notification.chat_type}`)
         .then(() => {
           fetchNotifications(); // Refresh notifications
           // Trigger chat list refresh
@@ -476,7 +477,7 @@ const Layout = ({ children }) => {
                                   <button 
                                     className="accept-button" 
                                     onClick={() => {
-                                      axios.post(`http://localhost:5000/api/trips/${notification.trip_id}/member-requests/${notification.notification_id}/approve`, {
+                                      axios.post(`${API_URL}/api/trips/${notification.trip_id}/member-requests/${notification.notification_id}/approve`, {
                                         user_id: user.user_id
                                       })
                                       .then(() => {
@@ -495,7 +496,7 @@ const Layout = ({ children }) => {
                                   <button 
                                     className="reject-button"
                                     onClick={() => {
-                                      axios.post(`http://localhost:5000/api/trips/${notification.trip_id}/member-requests/${notification.notification_id}/reject`, {
+                                      axios.post(`${API_URL}/api/trips/${notification.trip_id}/member-requests/${notification.notification_id}/reject`, {
                                         user_id: user.user_id
                                       })
                                       .then(() => {

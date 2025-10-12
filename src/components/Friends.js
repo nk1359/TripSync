@@ -5,6 +5,7 @@ import Layout from './Layout';
 import axios from 'axios';
 import { FaUserFriends, FaSearch, FaTimesCircle, FaCheckCircle, FaComments } from 'react-icons/fa';
 import './styles/Friends.css';
+import API_URL from '../config';
 
 const Friends = () => {
   const { user } = useContext(AuthContext);
@@ -32,7 +33,7 @@ const Friends = () => {
 
   const fetchFriends = async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/friends/${user.user_id}`);
+      const response = await axios.get(`${API_URL}/api/friends/${user.user_id}`);
       setFriends(response.data.friends || []);
     } catch (error) {
       console.error('Error fetching friends:', error);
@@ -41,7 +42,7 @@ const Friends = () => {
 
   const fetchSuggestions = async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/friend_suggestions/${user.user_id}`);
+      const response = await axios.get(`${API_URL}/api/friend_suggestions/${user.user_id}`);
       setSuggestions(response.data.suggestions || []);
     } catch (error) {
       console.error('Error fetching suggestions:', error);
@@ -50,7 +51,7 @@ const Friends = () => {
 
   const fetchFriendRequests = async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/friend_requests/${user.user_id}`);
+      const response = await axios.get(`${API_URL}/api/friend_requests/${user.user_id}`);
       setFriendRequests(response.data || []);
     } catch (error) {
       console.error('Error fetching friend requests:', error);
@@ -59,7 +60,7 @@ const Friends = () => {
 
   const fetchSentRequests = async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/friend_requests_sent/${user.user_id}`);
+      const response = await axios.get(`${API_URL}/api/friend_requests_sent/${user.user_id}`);
       setSentRequests(response.data || []);
     } catch (error) {
       console.error('Error fetching sent requests:', error);
@@ -76,7 +77,7 @@ const Friends = () => {
     setSearchMessage('Searching...');
 
     try {
-      const response = await axios.get(`http://localhost:5000/api/users?search=${encodeURIComponent(searchQuery)}&current_user_id=${user.user_id}`);
+      const response = await axios.get(`${API_URL}/api/users?search=${encodeURIComponent(searchQuery)}&current_user_id=${user.user_id}`);
       setSearchResults(response.data.users || []);
       setSearchMessage(response.data.users && response.data.users.length ? '' : 'No users found');
       setIsSearching(false);
@@ -89,7 +90,7 @@ const Friends = () => {
 
   const sendFriendRequest = async (friendId) => {
     try {
-      const response = await axios.post('http://localhost:5000/api/send_friend_request', {
+      const response = await axios.post(`${API_URL}/api/send_friend_request`, {
         user_id: user.user_id,
         friend_id: friendId
       });
@@ -123,7 +124,7 @@ const Friends = () => {
     if (!confirmed) return;
 
     try {
-      await axios.post('http://localhost:5000/api/remove_friend', {
+      await axios.post(`${API_URL}/api/remove_friend`, {
         user_id: user.user_id,
         friend_id: friendId
       });
@@ -136,7 +137,7 @@ const Friends = () => {
 
   const startDirectMessage = async (friend) => {
     try {
-      const response = await axios.post('http://localhost:5000/api/chats/direct', {
+      const response = await axios.post(`${API_URL}/api/chats/direct`, {
         user_id: user.user_id,
         friend_id: friend.user_id
       });
@@ -158,7 +159,7 @@ const Friends = () => {
 
   const acceptFriendRequest = async (requestId) => {
     try {
-      await axios.post(`http://localhost:5000/api/accept_friend_request/${requestId}`, {});
+      await axios.post(`${API_URL}/api/accept_friend_request/${requestId}`, {});
       
       // Update UI
       setSearchResults(prev => 
@@ -174,7 +175,7 @@ const Friends = () => {
 
   const rejectFriendRequest = async (requestId) => {
     try {
-      await axios.post(`http://localhost:5000/api/reject_friend_request/${requestId}`, {});
+      await axios.post(`${API_URL}/api/reject_friend_request/${requestId}`, {});
       
       // Refresh friend requests list
       fetchFriendRequests();
@@ -186,7 +187,7 @@ const Friends = () => {
 
   const cancelFriendRequest = async (requestId, friendId = null) => {
     try {
-      await axios.post(`http://localhost:5000/api/cancel_friend_request/${requestId}`, {});
+      await axios.post(`${API_URL}/api/cancel_friend_request/${requestId}`, {});
       
       // Update all relevant UI
       if (friendId) {

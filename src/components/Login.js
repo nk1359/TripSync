@@ -3,6 +3,7 @@ import { AuthContext } from './AuthContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import './styles/Login.css';
+import API_URL from '../config';
 
 function Login() {
   const [activeTab, setActiveTab] = useState('login');
@@ -83,7 +84,7 @@ function Login() {
     };
 
     try {
-      const res = await axios.post('http://localhost:5000/api/register', payload);
+      const res = await axios.post(`${API_URL}/api/register`, payload);
       if (res.status === 201) {
         setSuccess("Account created successfully! You can now log in.");
         setError("");

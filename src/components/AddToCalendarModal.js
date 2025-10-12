@@ -3,6 +3,7 @@ import axios from 'axios';
 import { FaTimes, FaCalendarPlus, FaCheckCircle } from 'react-icons/fa';
 import { useToast } from './ToastContext';
 import './styles/Calendar.css';
+import API_URL from '../config';
 
 const AddToCalendarModal = ({ place, onClose }) => {
   const { showToast } = useToast();
@@ -30,7 +31,7 @@ const AddToCalendarModal = ({ place, onClose }) => {
   const fetchGroups = async () => {
     setIsLoading(true);
     try {
-      const response = await axios.get(`http://localhost:5000/api/calendar/groups/${currentUserId}`);
+      const response = await axios.get(`${API_URL}/api/calendar/groups/${currentUserId}`);
       setGroups(response.data.groups || []);
       setIsLoading(false);
     } catch (error) {
@@ -56,7 +57,7 @@ const AddToCalendarModal = ({ place, onClose }) => {
     }
     
     try {
-      await axios.post('http://localhost:5000/api/calendar/events', {
+      await axios.post(`${API_URL}/api/calendar/events`, {
         title: eventForm.title,
         description: eventForm.description,
         start_date: eventForm.startDate,

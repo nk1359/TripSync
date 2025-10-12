@@ -4450,4 +4450,7 @@ def serve_catchall(path):
     return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    # Railway provides PORT environment variable
+    port = int(os.getenv('PORT', 5000))
+    # Use 0.0.0.0 to listen on all interfaces (required for Railway)
+    app.run(host='0.0.0.0', port=port, debug=False)

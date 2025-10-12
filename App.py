@@ -14,7 +14,7 @@ db_config = {
     'host': os.getenv('MYSQLHOST', 'localhost'),
     'user': os.getenv('MYSQLUSER', 'root'),
     'password': os.getenv('MYSQLPASSWORD', os.getenv('DB_PASSWORD', '')),
-    'database': os.getenv('MYSQLDATABASE', 'tripsync')
+    'database': os.getenv('MYSQLDATABASE', os.getenv('MYSQL_DATABASE', 'tripsync'))
 }
 
 # Initialize Flask app

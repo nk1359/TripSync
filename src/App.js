@@ -5,6 +5,7 @@ import { ToastProvider } from './components/ToastContext';
 import Login from './components/Login';
 import Register from './components/Register';
 import Home from './components/Home';
+import Search from './components/Search';
 import Chats from './components/Chats';
 import ChatRoom from './components/ChatRoom'; 
 import Planner from './components/Planner';
@@ -28,6 +29,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/home" element={<Home />} />
+          <Route path="/search" element={<Search />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/chats" element={user ? <Chats /> : <Navigate to="/" replace />} />

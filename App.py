@@ -4413,13 +4413,40 @@ def clear_unread_count(user_id, chat_id, chat_type):
             conn.close()
 
 # Serve React App
-@app.route('/', defaults={'path': ''})
+@app.route('/')
+def serve_root():
+    print(f"[SERVE] Serving root /")
+    return send_from_directory(app.static_folder, 'index.html')
+
+# Explicitly handle SPA routes
+@app.route('/search')
+@app.route('/friends')
+@app.route('/planner')
+@app.route('/calendar')
+@app.route('/chats')
+@app.route('/chats/<chat_id>')
+def serve_spa_routes(chat_id=None):
+    route = request.path
+    print(f"[SERVE] Serving SPA route: {route}")
+    return send_from_directory(app.static_folder, 'index.html')
+
+# Catch all for other routes
 @app.route('/<path:path>')
-def serve(path):
-    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+def serve_catchall(path):
+    print(f"[SERVE] Catchall requested path: '{path}'")
+    
+    # Don't serve React for API routes
+    if path.startswith('api/'):
+        return jsonify({"error": "API endpoint not found"}), 404
+    
+    # Serve static files if they exist (CSS, JS, images, etc.)
+    if os.path.exists(os.path.join(app.static_folder, path)):
+        print(f"[SERVE] Serving static file: {path}")
         return send_from_directory(app.static_folder, path)
-    else:
-        return send_from_directory(app.static_folder, 'index.html')
+    
+    # Serve index.html for all other routes (React Router handles them)
+    print(f"[SERVE] Serving index.html for path: {path}")
+    return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

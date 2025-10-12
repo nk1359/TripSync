@@ -813,17 +813,17 @@ const Planner = () => {
   };
 
   const handleSearchPlaces = (day) => {
-    // Store planner context in sessionStorage
-    sessionStorage.setItem('plannerContext', JSON.stringify({
+    // Navigate to search page with planner context
+    navigate('/search', {
+      state: {
+        fromPlanner: true,
       selectedDay: day,
       tripId: selectedTrip.trip_id,
       tripName: selectedTrip.trip_name,
       tripStartDate: selectedTrip.start_date,
       tripEndDate: selectedTrip.end_date
-    }));
-    
-    // Navigate to home with search mode
-    navigate('/?mode=search&from=planner');
+      }
+    });
   };
 
   const handleDeleteItem = async (itemId) => {

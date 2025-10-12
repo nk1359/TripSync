@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useContext } from 'react';
+﻿import React, { useEffect, useState, useRef, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from './AuthContext';
 import { useToast } from './ToastContext';
@@ -26,11 +26,6 @@ const Home = () => {
   const [localEvents, setLocalEvents] = useState([]);
   const [featuredCards, setFeaturedCards] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [viewMode, setViewMode] = useState('homepage');
-  const [nextPageToken, setNextPageToken] = useState(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [selectedPlace, setSelectedPlace] = useState(null);
 
   // Hero slideshow state
   const [currentHeroIndex, setCurrentHeroIndex] = useState(0);
@@ -99,29 +94,6 @@ const Home = () => {
   const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
 
-  // New search state
-  const [searchForm, setSearchForm] = useState({
-    placeType: '',
-    state: '',
-    city: '',
-    zipCode: '',
-    selectedCategories: []
-  });
-  const [searchResults, setSearchResults] = useState([]);
-  const [autocompleteResults, setAutocompleteResults] = useState([]);
-  const [cityAutocompleteResults, setCityAutocompleteResults] = useState([]);
-  const [showAutocomplete, setShowAutocomplete] = useState(false);
-  const [showCityAutocomplete, setShowCityAutocomplete] = useState(false);
-  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
-  
-  // Available categories
-  const availableCategories = [
-    'Restaurants', 'Hotels', 'Parks', 'Museums', 'Shopping Centers',
-    'Entertainment', 'Sports Venues', 'Tourist Attractions', 'Beaches',
-    'Hiking Trails', 'Bars & Nightlife', 'Coffee Shops', 'Gas Stations',
-    'Hospitals', 'Schools', 'Libraries', 'Gyms', 'Salons', 'Banks'
-  ];
-
   // Hero slideshow auto-rotation
   useEffect(() => {
     const interval = setInterval(() => {
@@ -159,53 +131,6 @@ const Home = () => {
     setTimeout(() => setLoading(false), 400);
   };
 
-  // Handle URL parameters and planner context on component mount
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const mode = urlParams.get('mode');
-    const fromPlanner = urlParams.get('from') === 'planner';
-    
-    // Check for planner context
-    if (fromPlanner) {
-      const context = sessionStorage.getItem('plannerContext');
-      if (context) {
-        const parsedContext = JSON.parse(context);
-        setPlannerContext(parsedContext);
-        
-        // Try to extract city/state from trip name
-        // Common formats: "NYC Trip", "Paris Adventure", "California Road Trip"
-        const tripName = parsedContext.tripName || '';
-        const nameParts = tripName.split(' ');
-        
-        // Set a default search for the trip location
-        // This is a simple approach - could be enhanced with actual trip location data
-        setSearchForm(prev => ({
-          ...prev,
-          placeType: '',
-          state: '',
-          city: '',
-          zipCode: '',
-          selectedCategories: []
-        }));
-      }
-    }
-    
-    // Check for search parameters
-    const placeType = urlParams.get('place_type');
-    const state = urlParams.get('state');
-    const city = urlParams.get('city');
-    
-    if (mode === 'search' || (placeType && (state || city))) {
-      setSearchForm({
-        placeType: placeType || '',
-        state: state || '',
-        city: city || '',
-        zipCode: '',
-        selectedCategories: []
-      });
-      setViewMode('search');
-    }
-  }, []);
 
   // Removed fetchStates - no longer needed for new homepage
 
@@ -549,7 +474,7 @@ const Home = () => {
       google_place_id: selectedPlaceForModal.place_id
     };
     
-    console.log('📝 Adding to planner:', itemData);
+    console.log('ðŸ“ Adding to planner:', itemData);
     
     try {
       const response = await fetch('http://localhost:5000/api/planner/items', {
@@ -559,7 +484,7 @@ const Home = () => {
       });
 
       const data = await response.json();
-      console.log('✅ Add to planner response:', data);
+      console.log('âœ… Add to planner response:', data);
 
       if (response.ok) {
         console.log('[HOME] Item added successfully, response:', data);
@@ -783,28 +708,28 @@ const Home = () => {
   const loadFeaturedCards = () => {
     const cards = user ? [
       {
-        icon: "🔍",
+        icon: "ðŸ”",
         title: "Quick Search",
         description: "Find restaurants, attractions, or any place you're looking for",
         action: "Search Now",
         color: "linear-gradient(45deg, #ff6b6b, #ee5a24)"
       },
       {
-        icon: "📅",
+        icon: "ðŸ“…",
         title: "Upcoming Events",
         description: "2 events this weekend - NYC Food Tour & Central Park Picnic",
         action: "View Calendar",
         color: "linear-gradient(45deg, #4ecdc4, #44a08d)"
       },
       {
-        icon: "💬",
+        icon: "ðŸ’¬",
         title: "Group Messages",
         description: "3 new messages in your trip planning groups",
         action: "Check Messages",
         color: "linear-gradient(45deg, #a8edea, #fed6e3)"
       },
       {
-        icon: "⭐",
+        icon: "â­",
         title: "Saved Places",
         description: "12 places saved - ready for your next adventure",
         action: "View Favorites",
@@ -812,19 +737,19 @@ const Home = () => {
       }
     ] : [
       {
-        icon: "🗺️",
+        icon: "ðŸ—ºï¸",
         title: "Itinerary Builder",
         description: "Create detailed day-by-day plans with destinations, activities, and bookings",
         action: "Get Started"
       },
       {
-        icon: "👥",
+        icon: "ðŸ‘¥",
         title: "Collaborate",
         description: "Invite friends and family to plan together with real-time updates",
         action: "Get Started"
       },
       {
-        icon: "📍",
+        icon: "ðŸ“",
         title: "Save Places",
         description: "Bookmark hotels, restaurants, and attractions for easy reference",
         action: "Get Started"
@@ -897,245 +822,7 @@ const Home = () => {
     setLocalEvents(events);
   };
 
-  const fetchAutocomplete = async (query) => {
-    if (query.length < 2) {
-      setAutocompleteResults([]);
-      setShowAutocomplete(false);
-      return;
-    }
 
-    try {
-      const response = await fetch(`http://localhost:5000/api/autocomplete?query=${encodeURIComponent(query)}`);
-      const data = await response.json();
-      
-      // Transform the API response to match our UI expectations
-      const formatted = (data || []).map(item => {
-        const parts = item.description.split(',');
-        return {
-          place_id: item.place_id,
-          main_text: parts[0].trim(),
-          secondary_text: parts.slice(1).join(',').trim()
-        };
-      });
-      
-      setAutocompleteResults(formatted);
-      setShowAutocomplete(true);
-    } catch (error) {
-      console.error('Error fetching autocomplete:', error);
-      setAutocompleteResults([]);
-      setShowAutocomplete(false);
-    }
-  };
-
-  const fetchCityAutocomplete = async (query) => {
-    if (query.length < 2) {
-      setCityAutocompleteResults([]);
-      setShowCityAutocomplete(false);
-      return;
-    }
-
-    try {
-      const response = await fetch(`http://localhost:5000/api/autocomplete/cities?query=${encodeURIComponent(query)}`);
-      const data = await response.json();
-      
-      // Transform the API response to extract city and state
-      const formatted = (data || []).map(item => {
-        const parts = item.description.split(',').map(p => p.trim());
-        return {
-          place_id: item.place_id,
-          city: parts[0],
-          state: parts.length > 1 ? parts[parts.length - 2] : '', // Get state (second to last element)
-          description: item.description
-        };
-      });
-      
-      setCityAutocompleteResults(formatted);
-      setShowCityAutocomplete(true);
-    } catch (error) {
-      console.error('Error fetching city autocomplete:', error);
-      setCityAutocompleteResults([]);
-      setShowCityAutocomplete(false);
-    }
-  };
-
-  const handleSearch = async () => {
-    if (!searchForm.placeType && searchForm.selectedCategories.length === 0) {
-      showToast('Please fill in the place type field or select categories', 'error');
-      return;
-    }
-
-    if (searchForm.selectedCategories.length > 0 && !searchForm.city) {
-      showToast('When using categories, please select a city', 'error');
-      return;
-    }
-
-    // Immediately switch to results view and show skeleton
-    setViewMode('search');
-    setSearchResults([]);
-    setNextPageToken(null);
-    setSearchLoading(true);
-    
-    try {
-      const params = new URLSearchParams();
-
-      if (searchForm.placeType) {
-        params.append('place_type', searchForm.placeType);
-      }
-      
-      if (searchForm.selectedCategories.length > 0) {
-        params.append('categories', searchForm.selectedCategories.join(','));
-      }
-
-      if (searchForm.state) {
-        params.append('state', searchForm.state);
-      }
-      
-      if (searchForm.city) {
-        params.append('city', searchForm.city);
-      }
-
-      console.log('🔍 Searching with params:', params.toString());
-
-      const response = await fetch(`http://localhost:5000/api/search?${params}`);
-      const data = await response.json();
-      
-      console.log('📦 Search response:', data);
-      console.log(`✅ Fetched ${data.places?.length || 0} results, has_more: ${data.has_more}`);
-      
-      setSearchResults(data.places || []);
-      setNextPageToken(data.next_page_token || null);
-      setSearchLoading(false);
-      
-      // Update URL with search parameters
-      const urlParams = new URLSearchParams();
-      urlParams.set('place_type', searchForm.placeType);
-      if (searchForm.state) urlParams.set('state', searchForm.state);
-      if (searchForm.city) urlParams.set('city', searchForm.city);
-      
-      const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
-      window.history.pushState({}, '', newUrl);
-    } catch (error) {
-      console.error('❌ Error searching places:', error);
-      setSearchLoading(false);
-    }
-  };
-
-  const handleLoadMore = async () => {
-    if (!nextPageToken || loadingMore) return;
-    
-    setLoadingMore(true);
-    
-    try {
-      const params = new URLSearchParams({
-        page_token: nextPageToken
-      });
-
-      console.log('🔄 Loading more results...');
-
-      const response = await fetch(`http://localhost:5000/api/search?${params}`);
-      const data = await response.json();
-      
-      console.log(`✅ Loaded ${data.places?.length || 0} more results, has_more: ${data.has_more}`);
-      
-      setSearchResults(prev => [...prev, ...(data.places || [])]);
-      setNextPageToken(data.next_page_token || null);
-    } catch (error) {
-      console.error('❌ Error loading more results:', error);
-      showToast('Failed to load more results', 'error');
-    } finally {
-      setLoadingMore(false);
-    }
-  };
-
-  const getDisplayableResults = (results) => {
-    const count = results.length;
-    const remainder = count % 4;
-    if (remainder === 0) return results;
-    return results.slice(0, count - remainder);
-  };
-
-  const handleInputChange = (field, value) => {
-    setSearchForm(prev => ({
-      ...prev,
-      [field]: value
-    }));
-    
-    // Trigger autocomplete for place type
-    if (field === 'placeType') {
-      fetchAutocomplete(value);
-    }
-    
-    // Trigger autocomplete for city
-    if (field === 'city') {
-      fetchCityAutocomplete(value);
-    }
-  };
-
-  const handleCitySelect = (city) => {
-    setSearchForm(prev => ({
-      ...prev,
-      city: city.city,
-      state: city.state
-    }));
-    setShowCityAutocomplete(false);
-  };
-
-  const handleCategoryToggle = (category) => {
-    setSearchForm(prev => ({
-      ...prev,
-      selectedCategories: prev.selectedCategories.includes(category)
-        ? prev.selectedCategories.filter(c => c !== category)
-        : [...prev.selectedCategories, category]
-    }));
-  };
-
-  const handlePlaceSelect = async (place) => {
-    // Set the place name and trigger immediate search
-    setSearchForm(prev => ({
-      ...prev,
-      placeType: place.main_text
-    }));
-    setSelectedPlace(place);
-    setShowAutocomplete(false);
-    
-    // Trigger immediate search for this specific place
-    await handleDirectPlaceSearch(place);
-  };
-
-  const handleDirectPlaceSearch = async (place) => {
-    setSearchLoading(true);
-    setViewMode('search');
-    setNextPageToken(null);
-    
-    try {
-      // Search for the specific place using its name
-      const params = new URLSearchParams({
-        place_type: place.main_text
-      });
-
-      console.log('🔍 Direct place search for:', place.main_text);
-
-      const response = await fetch(`http://localhost:5000/api/search?${params}`);
-      const data = await response.json();
-      
-      console.log('🔍 Direct search results:', data);
-      
-      setSearchResults(data.places || []);
-      setNextPageToken(data.next_page_token || null);
-      setSearchLoading(false);
-      
-      // Update URL with search parameters
-      const urlParams = new URLSearchParams();
-      urlParams.set('place_type', place.main_text);
-      
-      const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
-      window.history.pushState({}, '', newUrl);
-      
-    } catch (error) {
-      console.error('❌ Error in direct place search:', error);
-      setSearchLoading(false);
-    }
-  };
 
 
 
@@ -1240,11 +927,6 @@ const Home = () => {
     </>
   );
 
-  const renderSearchSkeleton = () => (
-    <div className="places-grid">
-      {[1, 2, 3, 4, 5, 6, 7, 8].map(i => renderSkeletonCard())}
-      </div>
-    );
 
   const renderHomepage = () => (
     <>
@@ -1399,344 +1081,6 @@ const Home = () => {
     </>
   );
 
-  const renderSearchForm = () => (
-    <div className="search-page">
-      <div className="back-to-home">
-        <button 
-          onClick={() => {
-            if (plannerContext) {
-              sessionStorage.removeItem('plannerContext');
-              navigate('/planner');
-            } else {
-              setViewMode('homepage');
-              setSearchResults([]);
-              setSearchForm({ placeType: '', state: '', city: '', zipCode: '', selectedCategories: [] });
-            }
-          }}
-          className="back-home-btn"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-          </svg>
-          {plannerContext ? 'Back to Planner' : 'Back to Home'}
-        </button>
-      </div>
-      <div className="search-form-container">
-        <div className="search-form-card">
-          {/* Place Type Search */}
-          <div className="form-section">
-            <div className="form-section-header">
-              <svg className="form-section-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                <circle cx="12" cy="10" r="3"></circle>
-              </svg>
-              <h3>What are you looking for?</h3>
-            </div>
-            <div className="autocomplete-container">
-              <div className="input-wrapper">
-                <FaSearch className="input-icon" />
-                <input
-                  id="placeType"
-                  type="text"
-                  placeholder="Search for places... (e.g., McDonald's, Central Park, hotels)"
-                  value={searchForm.placeType}
-                  onChange={(e) => handleInputChange('placeType', e.target.value)}
-                  onFocus={() => searchForm.placeType.length >= 2 && setShowAutocomplete(true)}
-                  onBlur={() => setTimeout(() => setShowAutocomplete(false), 200)}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      setShowAutocomplete(false);
-                      handleSearch();
-                    }
-                  }}
-                  className="modern-input"
-                />
-              </div>
-              {showAutocomplete && autocompleteResults.length > 0 && (
-                <div className="autocomplete-dropdown modern-dropdown">
-                  <div className="autocomplete-header">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '0.5rem' }}>
-                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                    </svg>
-                    Click to search this place directly
-                  </div>
-                  {autocompleteResults.map((place) => (
-                    <div
-                      key={place.place_id}
-                      className="autocomplete-item modern-item"
-                      onClick={() => handlePlaceSelect(place)}
-                    >
-                      <svg className="item-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                        <circle cx="12" cy="10" r="3"></circle>
-                      </svg>
-                      <div className="item-content">
-                        <div className="autocomplete-main">{place.main_text}</div>
-                        <div className="autocomplete-secondary">{place.secondary_text}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Line Separator */}
-          <div className="form-separator"></div>
-
-          {/* Categories Section */}
-          <div className="form-section">
-            <div className="form-section-header" onClick={() => setShowCategoryDropdown(!showCategoryDropdown)} style={{ cursor: 'pointer' }}>
-              <svg className="form-section-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
-                <line x1="7" y1="7" x2="7.01" y2="7"></line>
-              </svg>
-              <h3>Category</h3>
-              <svg className="dropdown-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginLeft: 'auto', transform: showCategoryDropdown ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
-                <polyline points="6 9 12 15 18 9"></polyline>
-              </svg>
-            </div>
-            {showCategoryDropdown && (
-              <div className="categories-grid modern-categories">
-                {availableCategories.map((category) => (
-                  <div
-                    key={category}
-                    className={`category-chip modern-chip ${searchForm.selectedCategories.includes(category) ? 'selected' : ''}`}
-                    onClick={() => handleCategoryToggle(category)}
-                  >
-                    <span className="chip-text">{category}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {searchForm.selectedCategories.length > 0 && !searchForm.city && (
-              <div className="form-help modern-help">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem', flexShrink: 0 }}>
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="16" x2="12" y2="12"></line>
-                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                </svg>
-                When using categories, please select a city below
-              </div>
-            )}
-          </div>
-
-          {/* Line Separator */}
-          <div className="form-separator"></div>
-
-          {/* Location Section */}
-          <div className="form-section">
-            <div className="form-section-header">
-              <svg className="form-section-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="2" y1="12" x2="22" y2="12"></line>
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-              </svg>
-              <h3>Where?</h3>
-            </div>
-            
-            <div className="location-inputs">
-              <div className="input-group">
-                <div className="input-wrapper">
-                  <FaMapMarkerAlt className="input-icon" />
-                  <input
-                    id="city"
-                    type="text"
-                    placeholder="City (e.g., Los Angeles, New York)"
-                    value={searchForm.city}
-                    onChange={(e) => handleInputChange('city', e.target.value)}
-                    onFocus={() => searchForm.city.length >= 2 && setShowCityAutocomplete(true)}
-                    onBlur={() => setTimeout(() => setShowCityAutocomplete(false), 200)}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        setShowCityAutocomplete(false);
-                        handleSearch();
-                      }
-                    }}
-                    className="modern-input"
-                  />
-                </div>
-                {showCityAutocomplete && cityAutocompleteResults.length > 0 && (
-                  <div className="autocomplete-dropdown modern-dropdown">
-                    <div className="autocomplete-header">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '0.5rem' }}>
-                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                      </svg>
-                      Click to select city and auto-fill state
-                    </div>
-                    {cityAutocompleteResults.map((city) => (
-                      <div
-                        key={city.place_id}
-                        className="autocomplete-item modern-item"
-                        onClick={() => handleCitySelect(city)}
-                      >
-                        <svg className="item-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <rect x="3" y="3" width="7" height="7"></rect>
-                          <rect x="14" y="3" width="7" height="7"></rect>
-                          <rect x="14" y="14" width="7" height="7"></rect>
-                          <rect x="3" y="14" width="7" height="7"></rect>
-                        </svg>
-                        <div className="item-content">
-                          <div className="autocomplete-main">{city.city}</div>
-                          <div className="autocomplete-secondary">{city.state}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="input-group">
-                <div className="input-wrapper">
-                  <svg className="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="2" y1="12" x2="22" y2="12"></line>
-                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                  </svg>
-                  <input
-                    id="state"
-                    type="text"
-                    placeholder="State (e.g., California, New York)"
-                    value={searchForm.state}
-                    onChange={(e) => handleInputChange('state', e.target.value)}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleSearch();
-                      }
-                    }}
-                    className="modern-input"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="form-help modern-help">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem', flexShrink: 0 }}>
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
-              </svg>
-              {searchForm.selectedCategories.length > 0 ? 
-                "City is required when using categories" : 
-                "Location is optional - search nationwide or in specific areas"}
-            </div>
-          </div>
-
-          <button 
-            type="button"
-            onClick={() => handleSearch()}
-            className="search-button modern-search-btn"
-            disabled={!searchForm.placeType && searchForm.selectedCategories.length === 0}
-          >
-            <div className="btn-content">
-              <FaSearch className="btn-icon" />
-              <span>Find Places</span>
-            </div>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderSearchResults = () => {
-    console.log('🔍 Rendering search results - searchLoading:', searchLoading);
-    console.log('🔍 Rendering search results - searchResults:', searchResults);
-    console.log('🔍 Rendering search results - searchResults.length:', searchResults.length);
-    
-    return (
-      <>
-        <div className="search-results-page">
-          <div className="results-top-bar">
-            <button 
-              onClick={() => {
-                if (plannerContext) {
-                  sessionStorage.removeItem('plannerContext');
-                  navigate('/planner');
-                } else {
-                  setViewMode('homepage');
-                  setSearchResults([]);
-                  setSearchForm({ placeType: '', state: '', city: '', zipCode: '', selectedCategories: [] });
-                  setSearchLoading(false);
-                  window.history.pushState({}, '', window.location.pathname);
-                }
-              }}
-              className="back-home-btn"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="19" y1="12" x2="5" y2="12"></line>
-                <polyline points="12 19 5 12 12 5"></polyline>
-              </svg>
-              {plannerContext ? 'Back to Planner' : 'Back to Home'}
-            </button>
-          </div>
-          
-          <div className="search-results-header">
-            <div className="results-header-content">
-              <h2 className="results-title">
-                <svg className="results-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <path d="m21 21-4.35-4.35"></path>
-                </svg>
-                Search Results
-              </h2>
-              <p className="results-count">
-                Found {searchResults.length} amazing places
-              </p>
-            </div>
-            
-            <button 
-              onClick={() => {
-                setViewMode('search');
-                setSearchResults([]);
-                setSearchLoading(false);
-              }}
-              className="new-search-btn"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8"></circle>
-                <path d="m21 21-4.35-4.35"></path>
-              </svg>
-              <span>New Search</span>
-            </button>
-          </div>
-        
-        {searchLoading ? (
-          renderSearchSkeleton()
-        ) : searchResults.length > 0 ? (
-          <>
-            <div className="places-grid">
-              {getDisplayableResults(searchResults).map(place => renderPlaceCard(place))}
-            </div>
-            
-            {nextPageToken && (
-              <div style={{ textAlign: 'center', marginTop: '2rem', marginBottom: '2rem' }}>
-                <button 
-                  className="load-more-btn"
-                  onClick={handleLoadMore}
-                  disabled={loadingMore}
-                >
-                  {loadingMore ? 'Loading...' : 'Load More Results'}
-                </button>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="no-results">
-            <div className="no-results-icon">🔍</div>
-            <h3>No places found</h3>
-            <p>Try adjusting your search terms or selecting a different location.</p>
-          </div>
-        )}
-      </div>
-    </>
-  );
-  };
-
   if (loading && !welcomeData) {
     return (
       <Layout>
@@ -1756,76 +1100,71 @@ const Home = () => {
   return (
     <Layout>
       <div className="home-page">
-        {viewMode === 'homepage' && (
-          <div className="hero-section">
-            <div className="hero-slideshow">
-              {heroImages.map((image, index) => (
-                <div
-                  key={index}
-                  className={`hero-slide ${index === currentHeroIndex ? 'active' : ''}`}
-                  style={{backgroundImage: `url(${image})`}}
-                />
-              ))}
-            </div>
-            <div className="hero-overlay"></div>
-            <div className="hero-content">
-              <h1 className="hero-title">{user ? 'Discover Remarkable Places' : 'Plan your next adventure'}</h1>
-              <p className="hero-subtitle">{user ? 'Find the perfect spots for your next adventure with friends' : 'Organize trips, collaborate with friends, and keep all your travel plans in one place'}</p>
-              
-              <div className="hero-actions">
-                {user ? (
-                  <>
-                    <button 
-                      className="hero-search-button"
-                      onClick={() => setViewMode('search')}
-                    >
-                      <FaSearch className="button-icon" />
-                      Start Exploring
-                    </button>
-                    <button className="hero-secondary-button">
-                      Learn More
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button 
-                      className="hero-search-button"
-                      onClick={() => navigate('/register')}
-                    >
-                      Get Started
-                    </button>
-                    <button 
-                      className="hero-secondary-button"
-                      onClick={() => navigate('/login')}
-                    >
-                      Sign In
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="hero-visual">
-              <div className="floating-cards">
-                <div className="floating-card card-1">🏛️</div>
-                <div className="floating-card card-2">🍽️</div>
-                <div className="floating-card card-3">🏔️</div>
-                <div className="floating-card card-4">🎭</div>
-              </div>
+        <div className="hero-section">
+          <div className="hero-slideshow">
+            {heroImages.map((image, index) => (
+              <div
+                key={index}
+                className={`hero-slide ${index === currentHeroIndex ? 'active' : ''}`}
+                style={{backgroundImage: `url(${image})`}}
+              />
+            ))}
+          </div>
+          <div className="hero-overlay"></div>
+          <div className="hero-content">
+            <h1 className="hero-title">{user ? 'Discover Remarkable Places' : 'Plan your next adventure'}</h1>
+            <p className="hero-subtitle">{user ? 'Find the perfect spots for your next adventure with friends' : 'Organize trips, collaborate with friends, and keep all your travel plans in one place'}</p>
+            
+            <div className="hero-actions">
+              {user ? (
+                <>
+                  <button 
+                    className="hero-search-button"
+                    onClick={() => navigate('/search')}
+                  >
+                    <FaSearch className="button-icon" />
+                    Start Exploring
+                  </button>
+                  <button className="hero-secondary-button">
+                    Learn More
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button 
+                    className="hero-search-button"
+                    onClick={() => navigate('/register')}
+                  >
+                    Get Started
+                  </button>
+                  <button 
+                    className="hero-secondary-button"
+                    onClick={() => navigate('/login')}
+                  >
+                    Sign In
+                  </button>
+                </>
+              )}
             </div>
           </div>
-        )}
+          <div className="hero-visual">
+            <div className="floating-cards">
+              <div className="floating-card card-1">ðŸ›ï¸</div>
+              <div className="floating-card card-2">ðŸ½ï¸</div>
+              <div className="floating-card card-3">ðŸ”ï¸</div>
+              <div className="floating-card card-4">ðŸŽ­</div>
+            </div>
+          </div>
+        </div>
 
         <div className="places-container">
-          {console.log('🔍 Main render - viewMode:', viewMode, 'searchResults.length:', searchResults.length)}
-          {viewMode === 'homepage' && renderHomepage()}
-          {viewMode === 'search' && !searchLoading && searchResults.length === 0 && renderSearchForm()}
-          {viewMode === 'search' && (searchLoading || searchResults.length > 0) && renderSearchResults()}
+          {renderHomepage()}
         </div>
       </div>
       
-      {isCalendarModalOpen && selectedPlace && (
+      {isCalendarModalOpen && selectedPlaceForModal && (
         <AddToCalendarModal 
-          place={selectedPlace} 
+          place={selectedPlaceForModal} 
           onClose={() => setIsCalendarModalOpen(false)} 
         />
       )}
@@ -1842,220 +1181,86 @@ const Home = () => {
                 <line x1="6" y1="6" x2="18" y2="18"></line>
               </svg>
             </button>
-
-            <div className="modal-image-container">
-              <img
-                src={placeImages[currentImageIndex] || selectedPlaceForModal.image_url || 'https://via.placeholder.com/600x400/1a1a2e/ffffff?text=No+Image'}
-                alt={selectedPlaceForModal.place_name}
-                className="modal-place-image"
-                onError={(e) => {
-                  e.target.src = 'https://via.placeholder.com/600x400/1a1a2e/6366f1?text=No+Image+Available';
-                }}
-              />
-              
-              {placeImages.length > 1 && (
-                <>
-                  <button
-                    className="image-nav-btn prev"
-                    onClick={(e) => {
+            
+            {placeImages.length > 0 && (
+              <div className="modal-image-container">
+                <img 
+                  src={placeImages[currentImageIndex]} 
+                  alt={selectedPlaceForModal.place_name}
+                  className="modal-place-image"
+                />
+                {placeImages.length > 1 && (
+                  <>
+                    <button className="image-nav-btn prev-btn" onClick={(e) => {
                       e.stopPropagation();
-                      setCurrentImageIndex((prev) => (prev === 0 ? placeImages.length - 1 : prev - 1));
-                    }}
-                  >
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="15 18 9 12 15 6"></polyline>
-                    </svg>
-                  </button>
-                  
-                  <button
-                    className="image-nav-btn next"
-                    onClick={(e) => {
+                      setCurrentImageIndex(prev => prev === 0 ? placeImages.length - 1 : prev - 1);
+                    }}>
+                      <FaChevronLeft />
+                    </button>
+                    <button className="image-nav-btn next-btn" onClick={(e) => {
                       e.stopPropagation();
-                      setCurrentImageIndex((prev) => (prev === placeImages.length - 1 ? 0 : prev + 1));
-                    }}
-                  >
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                  </button>
-                  
-                  <div className="image-indicators">
-                    {placeImages.map((_, index) => (
-                      <div
-                        key={index}
-                        className={`image-indicator ${index === currentImageIndex ? 'active' : ''}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCurrentImageIndex(index);
-                        }}
-                      />
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+                      setCurrentImageIndex(prev => prev === placeImages.length - 1 ? 0 : prev + 1);
+                    }}>
+                      <FaChevronRight />
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
 
             <div className="modal-place-details">
               <div className="modal-header-section">
                 <h2 className="modal-place-name">{selectedPlaceForModal.place_name}</h2>
-                <div className="modal-rating">
-                  <FaStar className="rating-stars" />
-                  <span>{selectedPlaceForModal.rating || '4.5'}</span>
+                <div className="modal-place-rating">
+                  <FaStar className="star-icon" />
+                  <span>{selectedPlaceForModal.rating || 'N/A'}</span>
                 </div>
               </div>
 
-              <div className="modal-location">
-                <FaMapMarkerAlt className="location-icon" />
-                <span>{selectedPlaceForModal.address || selectedPlaceForModal.city_name}</span>
-              </div>
-
-              <div className="modal-category">
-                {selectedPlaceForModal.category}
+              <div className="modal-info-section">
+                <div className="info-item">
+                  <FaMapMarkerAlt className="info-icon" />
+                  <span>{selectedPlaceForModal.address || 'Address not available'}</span>
+                </div>
+                <div className="info-item">
+                  <FaCity className="info-icon" />
+                  <span>{selectedPlaceForModal.category || 'Category'}</span>
+                </div>
               </div>
 
               <div className="modal-actions">
-                <button
-                  className="modal-action-btn primary"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleOpenPlannerSelector(selectedPlaceForModal);
-                  }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                    <line x1="16" y1="2" x2="16" y2="6"></line>
-                    <line x1="8" y1="2" x2="8" y2="6"></line>
-                    <line x1="3" y1="10" x2="21" y2="10"></line>
-                  </svg>
-                  Add to Planner
+                <button className="modal-action-btn primary" onClick={() => setIsCalendarModalOpen(true)}>
+                  <FaCalendarPlus /> Add to Calendar
                 </button>
-                
-                <button 
-                  className="modal-action-btn secondary"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(selectedPlaceForModal.google_maps_url, '_blank');
-                  }}
-                >
-                  <FaMapMarkerAlt />
-                  View on Maps
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Trip/Day Selector for Adding to Planner */}
-      {showTripSelector && selectedPlaceForModal && (
-        <div className="place-modal-overlay" onClick={() => setShowTripSelector(false)}>
-          <div className="trip-modal-content" style={{maxWidth: '500px'}} onClick={(e) => e.stopPropagation()}>
-            <button 
-              className="close-modal-btn"
-              onClick={() => setShowTripSelector(false)}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-
-            <div className="trip-modal-header">
-              <h2>Add to Trip</h2>
-              <p>Select which trip and day to add "{selectedPlaceForModal.place_name}"</p>
-            </div>
-
-            <div className="trip-modal-body">
-              <div className="trip-form-section">
-                <label>Select Trip *</label>
-                <div className="select-wrapper">
-                  <select
-                    value={selectedTripForPlanner?.trip_id || ''}
-                    onChange={(e) => {
-                      const trip = trips.find(t => t.trip_id === parseInt(e.target.value));
-                      setSelectedTripForPlanner(trip);
-                      setSelectedDayForPlanner(''); // Reset day when trip changes
-                    }}
-                    className="trip-input"
+                {selectedPlaceForModal.google_maps_url && (
+                  <a 
+                    href={selectedPlaceForModal.google_maps_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="modal-action-btn secondary"
                   >
-                    <option value="">Choose a trip...</option>
-                    {trips.map(trip => (
-                      <option key={trip.trip_id} value={trip.trip_id}>
-                        {trip.trip_name || trip.group_name}
-                      </option>
-                    ))}
-                  </select>
-                  <svg className="select-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="6 9 12 15 18 9"></polyline>
-                  </svg>
-                </div>
-              </div>
-
-              {selectedTripForPlanner && (
-                <div className="trip-form-section">
-                  <label>Select Day *</label>
-                  <div className="select-wrapper">
-                    <select
-                      value={selectedDayForPlanner}
-                      onChange={(e) => setSelectedDayForPlanner(e.target.value)}
-                      className="trip-input"
-                    >
-                      <option value="">Choose a day...</option>
-                      {getTripDays(selectedTripForPlanner).map(day => {
-                        const date = new Date(day);
-                        return (
-                          <option key={day} value={day}>
-                            {date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-                          </option>
-                        );
-                      })}
-                    </select>
-                    <svg className="select-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
-                  </div>
-                </div>
-              )}
-
-              <div className="trip-modal-footer">
-                <button
-                  onClick={() => setShowTripSelector(false)}
-                  className="trip-cancel-btn"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAddToPlanner}
-                  className="trip-create-btn"
-                  disabled={!selectedTripForPlanner || !selectedDayForPlanner}
-                >
-                  Add to Planner
-                </button>
+                    <FaMapMarkerAlt /> View on Maps
+                  </a>
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Trip Creation Modal */}
+      {/* Trip Modal */}
       {showTripModal && (
-        <div className="place-modal-overlay" onClick={() => setShowTripModal(false)}>
+        <div className="trip-modal-overlay" onClick={() => setShowTripModal(false)}>
           <div className="trip-modal-content" onClick={(e) => e.stopPropagation()}>
-            <button 
-              className="close-modal-btn"
-              onClick={() => setShowTripModal(false)}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-
             <div className="trip-modal-header">
               <h2>Create New Trip</h2>
-              <p>Plan your adventure by adding destinations and dates</p>
+              <button className="trip-modal-close" onClick={() => setShowTripModal(false)}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
             </div>
-
             <div className="trip-modal-body">
               {/* Trip Basic Info */}
               <div className="trip-form-section">
@@ -2210,16 +1415,16 @@ const Home = () => {
                       startDate={currentLocation.startDate}
                       endDate={currentLocation.endDate}
                       onStartDateChange={(date) => {
-                        console.log('🔴 onStartDateChange called with:', date);
+                        console.log('ðŸ”´ onStartDateChange called with:', date);
                         setCurrentLocation((prev) => {
-                          console.log('🔴 Previous state:', prev);
+                          console.log('ðŸ”´ Previous state:', prev);
                           const updated = {...prev, startDate: date};
-                          console.log('🔴 Updated state:', updated);
+                          console.log('ðŸ”´ Updated state:', updated);
                           return updated;
                         });
                       }}
                       onEndDateChange={(date) => {
-                        console.log('🔵 onEndDateChange called with:', date);
+                        console.log('ðŸ”µ onEndDateChange called with:', date);
                         setCurrentLocation((prev) => ({...prev, endDate: date}));
                       }}
                     />
@@ -2322,7 +1527,6 @@ const Home = () => {
 
             <div className="modal-header">
               <h2>Manage Trip Members</h2>
-              <p>Add or remove members from this trip</p>
             </div>
 
             <div className="modal-body">
@@ -2435,14 +1639,14 @@ const Home = () => {
                             className="approve-request-btn"
                             title="Approve request"
                           >
-                            ✓
+                            âœ“
                           </button>
                           <button 
                             onClick={() => handleRejectRequest(request.request_id)}
                             className="reject-request-btn"
                             title="Reject request"
                           >
-                            ✕
+                            âœ•
                           </button>
                         </div>
                       </div>

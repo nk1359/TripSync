@@ -8,7 +8,16 @@ const FloatingChat = () => {
   const [chats, setChats] = useState([]);
   const [friends, setFriends] = useState([]);
   const [directChats, setDirectChats] = useState([]);
-  const [openChatWindows, setOpenChatWindows] = useState([]);
+  const [openChatWindows, setOpenChatWindows] = useState(() => {
+    // Load persisted chat windows from sessionStorage
+    const savedChats = sessionStorage.getItem('openChatWindows');
+    if (savedChats) {
+      const chats = JSON.parse(savedChats);
+      // Mark restored chats to skip animation
+      return chats.map(chat => ({ ...chat, isRestored: true }));
+    }
+    return [];
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const currentUser = JSON.parse(localStorage.getItem('user')) || {};
@@ -48,6 +57,32 @@ const FloatingChat = () => {
       };
     }
   }, [currentUser.user_id]);
+
+  // Clear isRestored flag after first render
+  useEffect(() => {
+    const hasRestoredChats = openChatWindows.some(chat => chat.isRestored);
+    if (hasRestoredChats) {
+      // Wait for next tick to clear the flag (after CSS has been applied)
+      setTimeout(() => {
+        setOpenChatWindows(prev => prev.map(chat => {
+          const { isRestored, ...rest } = chat;
+          return rest;
+        }));
+      }, 50);
+    }
+  }, []); // Run only once on mount
+
+  // Persist open chat windows to sessionStorage
+  useEffect(() => {
+    if (openChatWindows.length > 0) {
+      // Remove isRestored flag before saving
+      const chatsToSave = openChatWindows.map(({ isRestored, ...chat }) => chat);
+      sessionStorage.setItem('openChatWindows', JSON.stringify(chatsToSave));
+      console.log('[FLOATING-CHAT] Persisted chat windows:', chatsToSave);
+    } else {
+      sessionStorage.removeItem('openChatWindows');
+    }
+  }, [openChatWindows]);
 
   const fetchChats = async () => {
     try {
@@ -288,6 +323,7 @@ const FloatingChat = () => {
             onClose={() => closeChat(chat.chat_id)}
             onToggleMinimize={() => toggleMinimize(chat.chat_id)}
             currentUserId={currentUser.user_id}
+            isRestored={chat.isRestored}
           />
         ))}
       </div>
@@ -295,7 +331,7 @@ const FloatingChat = () => {
   );
 };
 
-const ChatWindow = ({ chat, index, onClose, onToggleMinimize, currentUserId }) => {
+const ChatWindow = ({ chat, index, onClose, onToggleMinimize, currentUserId, isRestored }) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -364,7 +400,7 @@ const ChatWindow = ({ chat, index, onClose, onToggleMinimize, currentUserId }) =
 
   return (
     <div 
-      className={`chat-window ${chat.minimized ? 'minimized' : ''}`}
+      className={`chat-window ${chat.minimized ? 'minimized' : ''} ${isRestored ? 'no-animation' : ''}`}
     >
       <div className="chat-window-header">
         <div className="chat-window-title">{chat.chat_name || chat.trip_name}</div>

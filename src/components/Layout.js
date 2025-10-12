@@ -17,7 +17,6 @@ import {
   FaUserFriends
 } from 'react-icons/fa';
 import axios from 'axios';
-import FloatingChat from './FloatingChat';
 import './styles/Layout.css';
 
 const Layout = ({ children }) => {
@@ -101,7 +100,7 @@ const Layout = ({ children }) => {
 
   // Navigation items - show different items based on auth status
   const navItems = user ? [
-    { text: "Home", path: "/home" },
+    { text: "Home", path: "/" },
     { text: "Planner", path: "/planner" },
     { text: "Friends", path: "/friends" }
   ] : [
@@ -110,14 +109,15 @@ const Layout = ({ children }) => {
 
   const handleNavigation = (path) => {
     navigate(path);
-    // Force reload if navigating to home
-    if (path === '/home' || path === '/') {
-      window.location.href = path;
-    }
     if (isMobile) {
       setIsNavOpen(false);
       document.body.classList.remove('sidebar-open');
     }
+  };
+
+  // Logo click triggers full page reload
+  const handleLogoClick = () => {
+    window.location.href = '/';
   };
 
   // Navigate to Friends page
@@ -319,7 +319,7 @@ const Layout = ({ children }) => {
       <main className="main-section">
         <div className="top-bar">
           <div className="left-area">
-            <div className="app-logo">
+            <div className="app-logo" onClick={handleLogoClick} style={{ cursor: 'pointer' }}>
               <img src="/Trip Sync.png" alt="TripSync" className="logo-image" />
             </div>
             <div className="logo-separator"></div>
@@ -329,8 +329,7 @@ const Layout = ({ children }) => {
             <nav className="top-nav">
               <ul className="nav-list">
                 {navItems.map((item, index) => {
-                  const isActive = location.pathname === item.path || 
-                    (item.path === '/home' && location.pathname === '/');
+                  const isActive = location.pathname === item.path;
                   return (
                     <li key={index} className="nav-item">
                       <div 
@@ -582,10 +581,6 @@ const Layout = ({ children }) => {
           {children}
         </div>
       </main>
-
-      
-      {/* Floating Chat - Available on all pages */}
-      {user && <FloatingChat />}
     </div>
   );
 };

@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { useContext } from 'react';
 import { AuthContext } from './components/AuthContext';
 import { ToastProvider } from './components/ToastContext';
+import FloatingChat from './components/FloatingChat';
 import Login from './components/Login';
 import Register from './components/Register';
 import Home from './components/Home';
@@ -28,7 +29,6 @@ function App() {
       <Router>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/home" element={<Home />} />
           <Route path="/search" element={<Search />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
@@ -39,6 +39,9 @@ function App() {
           
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        
+        {/* FloatingChat persists across all pages */}
+        {user && <FloatingChat />}
       </Router>
     </ToastProvider>
   );

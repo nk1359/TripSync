@@ -2123,7 +2123,8 @@ def get_welcome_data(user_id):
 
 # Serve React App
 @app.route('/')
-@app.route('/home')
+@app.route('/search')
+@app.route('/friends')
 @app.route('/chats')
 @app.route('/chats/<path:path>')
 @app.route('/planner')

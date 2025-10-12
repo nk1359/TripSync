@@ -220,14 +220,14 @@ body {
 }
 
 .logo-image {
-  height: 36px;
+  height: 48px;
   width: auto;
   display: block;
 }
 
 .logo-separator {
   width: 1px;
-  height: 40px;
+  height: 50px;
   background: #3f3f46;
   margin-left: 1rem;
 }

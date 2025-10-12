@@ -309,6 +309,11 @@
   }
 }
 
+/* Skip animation for restored chats */
+.chat-window.no-animation {
+  animation: none !important;
+}
+
 .chat-window-header {
   padding: 0.875rem 1rem;
   background: #1f1f23;

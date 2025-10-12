@@ -932,24 +932,24 @@ const Home = () => {
     <>
       {user && (
         <div className="trips-dashboard">
-            <div className="trips-header">
-              <div className="trips-header-content">
-                <h2>My Trips</h2>
-                <p className="trips-subtitle">Plan, collaborate, and explore your adventures</p>
-              </div>
-              <button 
-                className="new-trip-btn"
-                onClick={() => setShowTripModal(true)}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-                New Trip
-              </button>
+          <div className="trips-header">
+            <div className="trips-header-content">
+              <h2>My Trips</h2>
+              <p className="trips-subtitle">Plan, collaborate, and explore your adventures</p>
             </div>
+            <button 
+              className="new-trip-btn"
+              onClick={() => setShowTripModal(true)}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              New Trip
+            </button>
+          </div>
 
-            <div className="trips-grid">
+          <div className="trips-grid">
             {trips.length > 0 ? (
               trips.map((trip, index) => {
                 // Parse dates if available
@@ -1025,22 +1025,22 @@ const Home = () => {
                       </div>
                       
                       <div className="trip-card-actions">
-                        {isOwner && (
-                          <button 
-                            className="trip-delete-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteTrip(trip.trip_id);
-                            }}
-                            title="Delete trip"
-                          >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <polyline points="3 6 5 6 21 6"></polyline>
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                              <line x1="10" y1="11" x2="10" y2="17"></line>
-                              <line x1="14" y1="11" x2="14" y2="17"></line>
-                            </svg>
-                          </button>
+                    {isOwner && (
+                        <button 
+                          className="trip-delete-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteTrip(trip.trip_id);
+                          }}
+                          title="Delete trip"
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            <line x1="10" y1="11" x2="10" y2="17"></line>
+                            <line x1="14" y1="11" x2="14" y2="17"></line>
+                          </svg>
+                        </button>
                         )}
                         
                         <div className="trip-arrow">
@@ -1100,62 +1100,62 @@ const Home = () => {
   return (
     <Layout>
       <div className="home-page">
-        <div className="hero-section">
-          <div className="hero-slideshow">
-            {heroImages.map((image, index) => (
-              <div
-                key={index}
-                className={`hero-slide ${index === currentHeroIndex ? 'active' : ''}`}
-                style={{backgroundImage: `url(${image})`}}
-              />
-            ))}
-          </div>
-          <div className="hero-overlay"></div>
-          <div className="hero-content">
-            <h1 className="hero-title">{user ? 'Discover Remarkable Places' : 'Plan your next adventure'}</h1>
-            <p className="hero-subtitle">{user ? 'Find the perfect spots for your next adventure with friends' : 'Organize trips, collaborate with friends, and keep all your travel plans in one place'}</p>
-            
-            <div className="hero-actions">
-              {user ? (
-                <>
-                  <button 
-                    className="hero-search-button"
-                    onClick={() => navigate('/search')}
-                  >
-                    <FaSearch className="button-icon" />
-                    Start Exploring
-                  </button>
-                  <button className="hero-secondary-button">
-                    Learn More
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button 
-                    className="hero-search-button"
-                    onClick={() => navigate('/register')}
-                  >
-                    Get Started
-                  </button>
-                  <button 
-                    className="hero-secondary-button"
-                    onClick={() => navigate('/login')}
-                  >
-                    Sign In
-                  </button>
-                </>
-              )}
+          <div className="hero-section">
+            <div className="hero-slideshow">
+              {heroImages.map((image, index) => (
+                <div
+                  key={index}
+                  className={`hero-slide ${index === currentHeroIndex ? 'active' : ''}`}
+                  style={{backgroundImage: `url(${image})`}}
+                />
+              ))}
             </div>
-          </div>
-          <div className="hero-visual">
-            <div className="floating-cards">
+            <div className="hero-overlay"></div>
+            <div className="hero-content">
+              <h1 className="hero-title">{user ? 'Discover Remarkable Places' : 'Plan your next adventure'}</h1>
+              <p className="hero-subtitle">{user ? 'Find the perfect spots for your next adventure with friends' : 'Organize trips, collaborate with friends, and keep all your travel plans in one place'}</p>
+              
+              <div className="hero-actions">
+                {user ? (
+                  <>
+                    <button 
+                      className="hero-search-button"
+                    onClick={() => navigate('/search')}
+                    >
+                      <FaSearch className="button-icon" />
+                      Start Exploring
+                    </button>
+                    <button className="hero-secondary-button">
+                      Learn More
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button 
+                      className="hero-search-button"
+                      onClick={() => navigate('/register')}
+                    >
+                      Get Started
+                    </button>
+                    <button 
+                      className="hero-secondary-button"
+                      onClick={() => navigate('/login')}
+                    >
+                      Sign In
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="hero-visual">
+              <div className="floating-cards">
               <div className="floating-card card-1">ðŸ›ï¸</div>
               <div className="floating-card card-2">ðŸ½ï¸</div>
               <div className="floating-card card-3">ðŸ”ï¸</div>
               <div className="floating-card card-4">ðŸŽ­</div>
+              </div>
             </div>
           </div>
-        </div>
 
         <div className="places-container">
           {renderHomepage()}
@@ -1181,31 +1181,31 @@ const Home = () => {
                 <line x1="6" y1="6" x2="18" y2="18"></line>
               </svg>
             </button>
-            
+
             {placeImages.length > 0 && (
-              <div className="modal-image-container">
-                <img 
+            <div className="modal-image-container">
+              <img
                   src={placeImages[currentImageIndex]} 
-                  alt={selectedPlaceForModal.place_name}
-                  className="modal-place-image"
-                />
-                {placeImages.length > 1 && (
-                  <>
+                alt={selectedPlaceForModal.place_name}
+                className="modal-place-image"
+              />
+              {placeImages.length > 1 && (
+                <>
                     <button className="image-nav-btn prev-btn" onClick={(e) => {
                       e.stopPropagation();
                       setCurrentImageIndex(prev => prev === 0 ? placeImages.length - 1 : prev - 1);
                     }}>
                       <FaChevronLeft />
-                    </button>
+                  </button>
                     <button className="image-nav-btn next-btn" onClick={(e) => {
                       e.stopPropagation();
                       setCurrentImageIndex(prev => prev === placeImages.length - 1 ? 0 : prev + 1);
                     }}>
                       <FaChevronRight />
-                    </button>
-                  </>
-                )}
-              </div>
+                  </button>
+                </>
+              )}
+            </div>
             )}
 
             <div className="modal-place-details">
@@ -1221,7 +1221,7 @@ const Home = () => {
                 <div className="info-item">
                   <FaMapMarkerAlt className="info-icon" />
                   <span>{selectedPlaceForModal.address || 'Address not available'}</span>
-                </div>
+              </div>
                 <div className="info-item">
                   <FaCity className="info-icon" />
                   <span>{selectedPlaceForModal.category || 'Category'}</span>
@@ -1237,16 +1237,16 @@ const Home = () => {
                     href={selectedPlaceForModal.google_maps_url} 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="modal-action-btn secondary"
+                  className="modal-action-btn secondary"
                   >
                     <FaMapMarkerAlt /> View on Maps
                   </a>
                 )}
-              </div>
             </div>
-          </div>
-        </div>
-      )}
+                </div>
+                  </div>
+                </div>
+              )}
 
       {/* Trip Modal */}
       {showTripModal && (
@@ -1256,10 +1256,10 @@ const Home = () => {
               <h2>Create New Trip</h2>
               <button className="trip-modal-close" onClick={() => setShowTripModal(false)}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
             </div>
             <div className="trip-modal-body">
               {/* Trip Basic Info */}
@@ -1318,21 +1318,21 @@ const Home = () => {
                         : filteredFriends.slice(0, 2);
                       
                       return friendsToShow.map(friend => (
-                        <div 
-                          key={friend.user_id}
-                          className={`friend-chip ${selectedFriends.includes(friend.user_id) ? 'selected' : ''}`}
-                          onClick={() => toggleFriendSelection(friend.user_id)}
-                        >
-                          <div className="friend-chip-avatar">
-                            {friend.first_name.charAt(0).toUpperCase()}
-                          </div>
-                          <span className="friend-chip-name">{friend.first_name} {friend.last_name}</span>
-                          {selectedFriends.includes(friend.user_id) && (
-                            <svg className="friend-check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                              <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
-                          )}
+                      <div 
+                        key={friend.user_id}
+                        className={`friend-chip ${selectedFriends.includes(friend.user_id) ? 'selected' : ''}`}
+                        onClick={() => toggleFriendSelection(friend.user_id)}
+                      >
+                        <div className="friend-chip-avatar">
+                          {friend.first_name.charAt(0).toUpperCase()}
                         </div>
+                        <span className="friend-chip-name">{friend.first_name} {friend.last_name}</span>
+                        {selectedFriends.includes(friend.user_id) && (
+                          <svg className="friend-check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                          </svg>
+                        )}
+                      </div>
                       ));
                     })()}
                   </div>

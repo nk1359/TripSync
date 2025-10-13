@@ -568,7 +568,7 @@ const Layout = ({ children }) => {
                   Sign In
                 </button>
                 <button 
-                  onClick={() => navigate('/register')} 
+                  onClick={() => navigate('/login', { state: { tab: 'register' } })} 
                   className="auth-button get-started-btn"
                 >
                   Get Started

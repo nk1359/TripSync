@@ -21,6 +21,7 @@ function Login() {
     username: '',
     password: ''
   });
+  const [rememberMe, setRememberMe] = useState(false);
 
   // Register form state
   const [registerData, setRegisterData] = useState({
@@ -31,6 +32,15 @@ function Login() {
     password: '',
     confirmPassword: ''
   });
+
+  // Load saved username on mount
+  useEffect(() => {
+    const savedUsername = localStorage.getItem('rememberedUsername');
+    if (savedUsername) {
+      setLoginData(prev => ({ ...prev, username: savedUsername }));
+      setRememberMe(true);
+    }
+  }, []);
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
@@ -54,6 +64,14 @@ function Login() {
       
       if (response.ok && data.user) {
         localStorage.setItem('user', JSON.stringify(data.user));
+        
+        // Handle remember me
+        if (rememberMe) {
+          localStorage.setItem('rememberedUsername', loginData.username);
+        } else {
+          localStorage.removeItem('rememberedUsername');
+        }
+        
         setUser(data.user);
         navigate('/home');
       } else {
@@ -148,6 +166,18 @@ function Login() {
               placeholder="Password"
               required
             />
+            
+            <div className="remember-me-container">
+              <label className="remember-me-label">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="remember-me-checkbox"
+                />
+                <span>Remember me</span>
+              </label>
+            </div>
             
             <button type="submit" className="btn" disabled={loading}>
               {loading ? 'Logging in...' : 'Log in'}

@@ -1096,7 +1096,7 @@ const Planner = () => {
             <p>Please select a trip to view the planner, or create a new trip from the Home page.</p>
             <button 
               className="back-home-btn"
-              onClick={() => window.location.href = '/home'}
+              onClick={() => window.location.href = '/'}
             >
               Go to Home
             </button>

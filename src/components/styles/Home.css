@@ -1621,15 +1621,51 @@
 }
 
 /* ===== Trip Creation Modal ===== */
+.trip-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
 .trip-modal-content {
   background: #1f1f23;
   border: 1px solid #3f3f46;
-  border-radius: 6px;
-  width: 100%;
+  border-radius: 12px;
+  width: 90%;
   max-width: 700px;
   max-height: 90vh;
   overflow-y: auto;
   position: relative;
+}
+
+.trip-modal-close {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  cursor: pointer;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.trip-modal-close:hover {
+  background: #27272a;
+  color: #ffffff;
 }
 
 .trip-modal-header {
@@ -2389,8 +2425,8 @@
   position: absolute;
   top: 1rem;
   right: 1rem;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
+  background: rgba(39, 39, 42, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -2398,14 +2434,16 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #a1a1aa;
+  color: #ffffff;
   transition: all 0.2s ease;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
   z-index: 10;
 }
 
 .search-modal-close:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #ffffff;
+  background: rgba(63, 63, 70, 0.95);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
 }
 
 .search-modal-carousel {

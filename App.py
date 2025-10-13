@@ -1108,6 +1108,60 @@ def autocomplete_cities():
         print("Error in city autocomplete:", e)
         return jsonify({"error": str(e)}), 500
 
+def normalize_search_term(term):
+    """Normalize search terms to improve Google Places API results.
+    Convert common singular terms to plural or more search-friendly versions."""
+    
+    if not term:
+        return term
+        
+    term_lower = term.lower().strip()
+    
+    # Common singular to plural mappings that improve search results
+    singular_to_plural = {
+        'park': 'parks',
+        'museum': 'museums',
+        'restaurant': 'restaurants',
+        'hotel': 'hotels',
+        'cafe': 'cafes',
+        'bar': 'bars',
+        'beach': 'beaches',
+        'trail': 'trails',
+        'gym': 'gyms',
+        'spa': 'spas',
+        'mall': 'malls',
+        'store': 'stores',
+        'shop': 'shops',
+        'attraction': 'attractions',
+        'landmark': 'landmarks',
+        'gallery': 'galleries',
+        'theater': 'theaters',
+        'cinema': 'cinemas',
+        'bakery': 'bakeries',
+        'library': 'libraries',
+        'stadium': 'stadiums',
+        'zoo': 'zoos',
+    }
+    
+    # Handle the FIRST word too (not just last word) - important for phrases like "park in nyc"
+    words = term_lower.split()
+    first_word = words[0] if words else term_lower
+    
+    # Check first word (most important for search terms)
+    if first_word in singular_to_plural:
+        words[0] = singular_to_plural[first_word]
+        result = ' '.join(words)
+        return result
+    
+    # Check last word as fallback
+    last_word = words[-1] if words else term_lower
+    if last_word in singular_to_plural:
+        words[-1] = singular_to_plural[last_word]
+        return ' '.join(words)
+    
+    # If no mapping found, return original term
+    return term
+
 @app.route('/api/search', methods=['GET'])
 def search_places():
     """Search for places using Google Places API with pagination support via next_page_token"""
@@ -1121,6 +1175,8 @@ def search_places():
     state = request.args.get('state', '')
     country = request.args.get('country', 'USA')
     page_token = request.args.get('page_token', None)  # Get next_page_token from frontend
+    
+    print(f"📥 Received params - place_type: '{place_type}', city: '{city}', state: '{state}')")
     
     # Build location string
     location_parts = [part for part in [city, state, country] if part]
@@ -1141,28 +1197,50 @@ def search_places():
                 print(f"❌ Error using page token: {str(token_error)}")
                 return jsonify({"error": f"Failed to fetch next page: {str(token_error)}"}), 500
         else:
-            # Build search query
-            search_query = f"{place_type} and {category}" if place_type and category else (place_type or category)
+            # Build search query - handle both singular and plural variations
+            search_parts = []
+            
+            if place_type:
+                # Normalize common singular terms to plural for better results
+                normalized_place_type = normalize_search_term(place_type)
+                if normalized_place_type != place_type:
+                    print(f"🔄 Normalized '{place_type}' → '{normalized_place_type}'")
+                search_parts.append(normalized_place_type)
+            
+            if category:
+                search_parts.append(category)
+            
+            # Build the search query
+            if len(search_parts) > 1:
+                search_query = f"{' '.join(search_parts)}"
+            elif len(search_parts) == 1:
+                search_query = search_parts[0]
+            else:
+                search_query = ""
             
             # If we have a location, add it to the query
             if location:
-                search_query = f"{search_query} in {location}"
+                search_query = f"{search_query} in {location}" if search_query else location
             
             print(f"🔍 Searching for: {search_query}")
             
             # Perform text search
             results = gmaps.places(query=search_query)
         
-        print(f"📍 Processing {len(results.get('results', []))} search results")
+        # Log what Google returned
+        initial_count = len(results.get('results', []))
+        print(f"📍 Google returned {initial_count} initial results")
+        print(f"📍 Processing {initial_count} search results")
         
         formatted_places = []
         
         for idx, place in enumerate(results.get('results', []), 1):
             try:
                 place_id = place.get('place_id')
-                print(f"Processing place {idx}: {place.get('name')} - {place_id}")
+                place_name = place.get('name', 'Unknown')
+                print(f"Processing place {idx}: {place_name} - {place_id}")
                 
-                # Get photo URL
+                # Get photo URL from initial result
                 photo_url = None
                 photos = place.get('photos')
                 if photos and len(photos) > 0:
@@ -1170,7 +1248,7 @@ def search_places():
                     if photo_reference:
                         photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
                 
-                # Get detailed place information
+                # Try to get detailed place information, but use basic info if it fails
                 try:
                     details = gmaps.place(place_id=place_id, fields=[
                         'name', 'formatted_address', 'geometry', 
@@ -1181,29 +1259,62 @@ def search_places():
                         result_data = details['result']
                         
                         # Get place type and convert to category
-                        place_type = result_data.get('types', [])
-                        if isinstance(place_type, str):
-                            place_type = [place_type]
+                        place_types = result_data.get('types', place.get('types', []))
+                        if isinstance(place_types, str):
+                            place_types = [place_types]
                         
                         formatted_place = {
                             'place_id': place_id,
-                            'place_name': result_data.get('name', ''),
-                            'address': result_data.get('formatted_address', ''),
+                            'place_name': result_data.get('name', place_name),
+                            'address': result_data.get('formatted_address', place.get('vicinity', '')),
                             'city_name': city.split(',')[0] if city else extract_city_from_address(result_data.get('formatted_address', '')),
-                            'category': extract_category_from_types(place_type),
+                            'category': extract_category_from_types(place_types),
                             'image_url': photo_url,
-                            'rating': str(result_data.get('rating', '4.5')),
+                            'rating': str(result_data.get('rating', place.get('rating', '4.5'))),
                             'google_maps_url': result_data.get('url', ''),
-                            'lat': result_data['geometry']['location']['lat'] if 'geometry' in result_data else None,
-                            'lng': result_data['geometry']['location']['lng'] if 'geometry' in result_data else None
+                            'lat': result_data.get('geometry', {}).get('location', {}).get('lat') or place.get('geometry', {}).get('location', {}).get('lat'),
+                            'lng': result_data.get('geometry', {}).get('location', {}).get('lng') or place.get('geometry', {}).get('location', {}).get('lng')
                         }
                         formatted_places.append(formatted_place)
+                        print(f"  ✅ Successfully processed {place_name}")
+                    else:
+                        print(f"  ⚠️ Details status not OK for {place_name}: {details['status']}, using basic info")
+                        # Fall back to basic info from initial result
+                        place_types = place.get('types', [])
+                        formatted_place = {
+                            'place_id': place_id,
+                            'place_name': place_name,
+                            'address': place.get('vicinity', ''),
+                            'city_name': city.split(',')[0] if city else '',
+                            'category': extract_category_from_types(place_types),
+                            'image_url': photo_url,
+                            'rating': str(place.get('rating', '4.5')),
+                            'google_maps_url': f"https://www.google.com/maps/place/?q=place_id:{place_id}",
+                            'lat': place.get('geometry', {}).get('location', {}).get('lat'),
+                            'lng': place.get('geometry', {}).get('location', {}).get('lng')
+                        }
+                        formatted_places.append(formatted_place)
+                        
                 except Exception as e:
-                    print(f"Error fetching place details for {place_id}: {e}")
-                    continue
+                    print(f"  ❌ Error fetching details for {place_name}: {e}, using basic info")
+                    # Use basic info from initial search result as fallback
+                    place_types = place.get('types', [])
+                    formatted_place = {
+                        'place_id': place_id,
+                        'place_name': place_name,
+                        'address': place.get('vicinity', ''),
+                        'city_name': city.split(',')[0] if city else '',
+                        'category': extract_category_from_types(place_types),
+                        'image_url': photo_url,
+                        'rating': str(place.get('rating', '4.5')),
+                        'google_maps_url': f"https://www.google.com/maps/place/?q=place_id:{place_id}",
+                        'lat': place.get('geometry', {}).get('location', {}).get('lat'),
+                        'lng': place.get('geometry', {}).get('location', {}).get('lng')
+                    }
+                    formatted_places.append(formatted_place)
             
             except Exception as e:
-                print(f"Error processing place: {e}")
+                print(f"  ❌ Critical error processing place: {e}")
                 continue
         
         # Get next_page_token for loading more results
@@ -1641,22 +1752,22 @@ def extract_category_from_types(types):
     
     category_mapping = {
         'restaurant': 'Restaurants',
-        'cafe': 'Restaurants',
-        'bar': 'Restaurants',
+        'cafe': 'Cafes',
+        'bar': 'Bars',
         'food': 'Restaurants',
         'meal_delivery': 'Restaurants',
         'meal_takeaway': 'Restaurants',
-        'bakery': 'Restaurants',
+        'bakery': 'Bakeries',
         'museum': 'Museums',
-        'art_gallery': 'Museums',
-        'park': 'Parks & Recreation',
-        'amusement_park': 'Parks & Recreation',
-        'campground': 'Parks & Recreation',
-        'rv_park': 'Parks & Recreation',
+        'art_gallery': 'Galleries',
+        'park': 'Parks',
+        'amusement_park': 'Parks',
+        'campground': 'Parks',
+        'rv_park': 'Parks',
         'tourist_attraction': 'Attractions',
-        'zoo': 'Attractions',
-        'aquarium': 'Attractions',
-        'landmark': 'Attractions',
+        'zoo': 'Zoos',
+        'aquarium': 'Zoos',
+        'landmark': 'Landmarks',
         'point_of_interest': 'Attractions',
         'shopping_mall': 'Shopping',
         'store': 'Shopping',
@@ -1671,17 +1782,23 @@ def extract_category_from_types(types):
         'resort': 'Hotels',
         'night_club': 'Nightlife',
         'casino': 'Nightlife',
-        'stadium': 'Sports & Entertainment',
-        'movie_theater': 'Sports & Entertainment',
-        'bowling_alley': 'Sports & Entertainment',
-        'gym': 'Wellness',
-        'spa': 'Wellness',
-        'beauty_salon': 'Wellness',
-        'hair_care': 'Wellness',
-        'church': 'Places of Worship',
-        'mosque': 'Places of Worship',
-        'synagogue': 'Places of Worship',
-        'hindu_temple': 'Places of Worship',
+        'stadium': 'Stadiums',
+        'movie_theater': 'Theaters',
+        'theater': 'Theaters',
+        'theatre': 'Theaters',
+        'bowling_alley': 'Entertainment',
+        'gym': 'Gyms',
+        'spa': 'Spas',
+        'beauty_salon': 'Spas',
+        'hair_care': 'Spas',
+        'natural_feature': 'Beaches',
+        'beach': 'Beaches',
+        'hiking_area': 'Trails',
+        'trail': 'Trails',
+        'church': 'Landmarks',
+        'mosque': 'Landmarks',
+        'synagogue': 'Landmarks',
+        'hindu_temple': 'Landmarks',
         'airport': 'Transportation',
         'bus_station': 'Transportation',
         'train_station': 'Transportation',

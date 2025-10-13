@@ -1,12 +1,14 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { AuthContext } from './AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import './styles/Login.css';
 import API_URL from '../config';
 
 function Login() {
-  const [activeTab, setActiveTab] = useState('login');
+  const location = useLocation();
+  const initialTab = location.state?.tab || 'login';
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);

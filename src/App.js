@@ -4,7 +4,6 @@ import { AuthContext } from './components/AuthContext';
 import { ToastProvider } from './components/ToastContext';
 import FloatingChat from './components/FloatingChat';
 import Login from './components/Login';
-import Register from './components/Register';
 import Home from './components/Home';
 import Search from './components/Search';
 import Chats from './components/Chats';
@@ -31,7 +30,6 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/search" element={<Search />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
           <Route path="/chats" element={user ? <Chats /> : <Navigate to="/" replace />} />
           <Route path="/chats/:groupId" element={user ? <ChatRoom /> : <Navigate to="/" replace />} />
           <Route path="/planner" element={user ? <Planner /> : <Navigate to="/" replace />} />

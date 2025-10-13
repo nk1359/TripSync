@@ -1134,7 +1134,7 @@ const Home = () => {
                   <>
                     <button 
                       className="hero-search-button"
-                      onClick={() => navigate('/register')}
+                      onClick={() => navigate('/login', { state: { tab: 'register' } })}
                     >
                       Get Started
                     </button>

@@ -16,6 +16,7 @@ import {
   FaFilter
 } from 'react-icons/fa';
 import Layout from './Layout';
+import DateRangePicker from './DateRangePicker';
 import './styles/Planner.css';
 import API_URL from '../config';
 
@@ -37,6 +38,28 @@ const Planner = () => {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [sentInvitations, setSentInvitations] = useState([]);
   const [myPendingRequests, setMyPendingRequests] = useState([]);
+  
+  // Trip creation states
+  const [showTripModal, setShowTripModal] = useState(false);
+  const [tripForm, setTripForm] = useState({
+    tripName: '',
+    description: '',
+    memberIds: []
+  });
+  const [tripFriends, setTripFriends] = useState([]);
+  const [selectedFriends, setSelectedFriends] = useState([]);
+  const [friendSearchQuery, setFriendSearchQuery] = useState('');
+  const [showAllFriends, setShowAllFriends] = useState(false);
+  const [tripLocations, setTripLocations] = useState([]);
+  const [currentLocation, setCurrentLocation] = useState({
+    city: '',
+    state: '',
+    startDate: '',
+    endDate: ''
+  });
+  const [editingLocationId, setEditingLocationId] = useState(null);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   
   // Recommendations states
   const [recommendations, setRecommendations] = useState({});
@@ -201,6 +224,202 @@ const Planner = () => {
       }
     } catch (error) {
       console.error("Error fetching trips:", error.response?.data || error.message);
+    }
+  };
+
+  // Fetch friends when trip modal opens
+  useEffect(() => {
+    if (showTripModal && currentUserId) {
+      fetchFriendsForTrip();
+    }
+  }, [showTripModal, currentUserId]);
+  
+  const fetchFriendsForTrip = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/friends/${currentUserId}`);
+      const data = await response.json();
+      setTripFriends(data.friends || []);
+    } catch (error) {
+      console.error('Error fetching friends:', error);
+    }
+  };
+  
+  const toggleFriendSelection = (friendId) => {
+    setSelectedFriends(prev => 
+      prev.includes(friendId) 
+        ? prev.filter(id => id !== friendId)
+        : [...prev, friendId]
+    );
+  };
+
+  // Fetch location suggestions for trip creation
+  const fetchLocationSuggestions = async (query) => {
+    if (query.length < 2) {
+      setLocationSuggestions([]);
+      setShowLocationSuggestions(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/autocomplete/cities?query=${encodeURIComponent(query)}`);
+      const data = await response.json();
+      
+      const formatted = (data || []).map(item => {
+        const parts = item.description.split(',').map(p => p.trim());
+        return {
+          place_id: item.place_id,
+          city: parts[0],
+          state: parts.length > 1 ? parts[parts.length - 2] : '',
+          description: item.description
+        };
+      });
+      
+      setLocationSuggestions(formatted);
+      setShowLocationSuggestions(true);
+    } catch (error) {
+      console.error('Error fetching location suggestions:', error);
+    }
+  };
+
+  // Add another location (saves current and prepares for next)
+  const handleAddLocation = () => {
+    if (!currentLocation.city || !currentLocation.startDate) {
+      showToast('Please enter city and start date', 'info');
+      return;
+    }
+
+    if (editingLocationId) {
+      // Update existing location
+      setTripLocations(tripLocations.map(loc => 
+        loc.id === editingLocationId ? { ...currentLocation, id: editingLocationId } : loc
+      ));
+      setEditingLocationId(null);
+    } else {
+      // Add current location to the list
+      setTripLocations([...tripLocations, { ...currentLocation, id: Date.now() }]);
+    }
+    
+    // Clear form to add another location
+    setCurrentLocation({ city: '', state: '', startDate: '', endDate: '' });
+  };
+
+  // Edit location
+  const handleEditLocation = (locationId) => {
+    const locationToEdit = tripLocations.find(loc => loc.id === locationId);
+    if (locationToEdit) {
+      setCurrentLocation(locationToEdit);
+      setEditingLocationId(locationId);
+    }
+  };
+
+  // Remove location from trip
+  const handleRemoveLocation = (locationId) => {
+    setTripLocations(tripLocations.filter(loc => loc.id !== locationId));
+    // If we're editing this location, clear the edit state
+    if (editingLocationId === locationId) {
+      setEditingLocationId(null);
+      setCurrentLocation({ city: '', state: '', startDate: '', endDate: '' });
+    }
+  };
+
+  // Select location from suggestions
+  const handleLocationSelect = (location) => {
+    setCurrentLocation(prev => ({
+      ...prev,
+      city: location.city,
+      state: location.state
+    }));
+    setShowLocationSuggestions(false);
+  };
+
+  // Create new trip
+  const handleCreateTrip = async () => {
+    if (!tripForm.tripName.trim()) {
+      showToast('Please enter a trip name', 'info');
+      return;
+    }
+
+    // Auto-add current location if it has data and hasn't been added yet
+    let finalLocations = [...tripLocations];
+    if (currentLocation.city && currentLocation.state && currentLocation.startDate) {
+      finalLocations.push({ ...currentLocation, id: Date.now() });
+    }
+
+    if (finalLocations.length === 0) {
+      showToast('Please add at least one location', 'info');
+      return;
+    }
+
+    // Get the earliest start date and latest end date from locations
+    const startDates = finalLocations.map(loc => loc.startDate).filter(date => date);
+    const endDates = finalLocations.map(loc => loc.endDate).filter(date => date);
+    
+    if (startDates.length === 0 || endDates.length === 0) {
+      showToast('Please ensure all locations have valid dates', 'info');
+      return;
+    }
+
+    const tripStartDate = new Date(Math.min(...startDates.map(date => new Date(date))));
+    const tripEndDate = new Date(Math.max(...endDates.map(date => new Date(date))));
+
+    try {
+      // Create trip without automatically adding members
+      const response = await fetch(`${API_URL}/api/trips`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trip_name: tripForm.tripName,
+          description: tripForm.description,
+          start_date: tripStartDate.toISOString().split('T')[0],
+          end_date: tripEndDate.toISOString().split('T')[0],
+          created_by: currentUserId,
+          member_ids: []  // Don't auto-add friends
+        })
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        const newTripId = data.trip_id;
+        
+        // Send friend requests for each selected friend
+        if (selectedFriends.length > 0) {
+          const requestPromises = selectedFriends.map(friendId =>
+            fetch(`${API_URL}/api/trips/${newTripId}/member-requests`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                requester_id: currentUserId,
+                friend_id: friendId
+              })
+            })
+          );
+          
+          try {
+            await Promise.all(requestPromises);
+            showToast(`Trip created! ${selectedFriends.length} friend invitation${selectedFriends.length > 1 ? 's' : ''} sent.`, 'success');
+          } catch (error) {
+            console.error('Error sending friend invitations:', error);
+            showToast('Trip created, but some invitations failed to send', 'error');
+          }
+        } else {
+          showToast('Trip created successfully!', 'success');
+        }
+        
+        setShowTripModal(false);
+        setTripForm({ tripName: '', description: '', memberIds: [] });
+        setTripLocations([]);
+        setCurrentLocation({ city: '', state: '', startDate: '', endDate: '' });
+        setSelectedFriends([]);
+        setFriendSearchQuery('');
+        setShowAllFriends(false);
+        fetchTrips(); // Refresh trips
+      } else {
+        showToast(data.error || 'Failed to create trip', 'error');
+      }
+    } catch (error) {
+      console.error('Error creating trip:', error);
+      showToast('Failed to create trip', 'error');
     }
   };
 
@@ -1087,13 +1306,288 @@ const Planner = () => {
   const tripDays = getTripDays();
   const hasDates = tripDays.length > 0;
 
-  if (!selectedTrip) {
+  if (!selectedTrip && trips.length === 0) {
+    return (
+      <Layout>
+        <div className="planner-page">
+          <div className="no-trip-selected">
+            <h2>No Trips Yet</h2>
+            <p>Create your first trip to start planning your adventure!</p>
+            <button 
+              className="back-home-btn"
+              onClick={() => setShowTripModal(true)}
+              style={{ marginTop: '1rem' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              Create New Trip
+            </button>
+          </div>
+        </div>
+
+        {/* Trip Creation Modal */}
+        {showTripModal && (
+          <div className="trip-modal-overlay" onClick={() => setShowTripModal(false)}>
+            <div className="trip-modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="trip-modal-header">
+                <h2>Create New Trip</h2>
+                <button className="trip-modal-close" onClick={() => setShowTripModal(false)}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+              <div className="trip-modal-body">
+                {/* Trip Basic Info */}
+                <div className="trip-form-section">
+                  <label>Trip Name *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Summer Europe Adventure"
+                    value={tripForm.tripName}
+                    onChange={(e) => setTripForm({...tripForm, tripName: e.target.value})}
+                    className="trip-input"
+                  />
+                </div>
+
+                <div className="trip-form-section">
+                  <label>Description</label>
+                  <textarea
+                    placeholder="Add trip details..."
+                    value={tripForm.description}
+                    onChange={(e) => setTripForm({...tripForm, description: e.target.value})}
+                    className="trip-textarea"
+                    rows="3"
+                  />
+                </div>
+
+                {/* Invite Friends Section */}
+                {tripFriends.length > 0 && (
+                  <div className="trip-form-section">
+                    <label>Invite Friends (Optional)</label>
+                    
+                    {/* Search Friends */}
+                    <div className="friend-search-container">
+                      <input
+                        type="text"
+                        placeholder="Search friends..."
+                        value={friendSearchQuery}
+                        onChange={(e) => setFriendSearchQuery(e.target.value)}
+                        className="trip-input"
+                        style={{ marginBottom: '1rem' }}
+                      />
+                    </div>
+
+                    <div className="friends-selection-grid">
+                      {(() => {
+                        const filteredFriends = tripFriends.filter(friend => {
+                          const searchLower = friendSearchQuery.toLowerCase();
+                          return (
+                            `${friend.first_name} ${friend.last_name}`.toLowerCase().includes(searchLower) ||
+                            friend.username?.toLowerCase().includes(searchLower)
+                          );
+                        });
+                        
+                        const friendsToShow = friendSearchQuery || showAllFriends 
+                          ? filteredFriends 
+                          : filteredFriends.slice(0, 2);
+                        
+                        return friendsToShow.map(friend => (
+                          <div 
+                            key={friend.user_id}
+                            className={`friend-chip ${selectedFriends.includes(friend.user_id) ? 'selected' : ''}`}
+                            onClick={() => toggleFriendSelection(friend.user_id)}
+                          >
+                            <div className="friend-chip-avatar">
+                              {friend.first_name.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="friend-chip-name">{friend.first_name} {friend.last_name}</span>
+                            {selectedFriends.includes(friend.user_id) && (
+                              <svg className="friend-check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                              </svg>
+                            )}
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                    
+                    {!friendSearchQuery && tripFriends.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllFriends(!showAllFriends)}
+                        className="show-more-friends-btn"
+                        style={{ marginTop: '0.75rem' }}
+                      >
+                        {showAllFriends ? 'Show Less' : `Show ${tripFriends.length - 2} More`}
+                      </button>
+                    )}
+                    
+                    {selectedFriends.length > 0 && (
+                      <p className="selected-friends-count">
+                        {selectedFriends.length} friend{selectedFriends.length > 1 ? 's' : ''} selected
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Add Destinations Section */}
+                <div className="trip-form-section">
+                  <label>Add Destinations</label>
+                  
+                  <div className="add-destination-container">
+                    <div className="destination-input-box">
+                      <div className="location-input-row">
+                        <div className="location-input-wrapper">
+                          <input
+                            type="text"
+                            placeholder="City"
+                            value={currentLocation.city}
+                            onChange={(e) => {
+                              setCurrentLocation({...currentLocation, city: e.target.value});
+                              fetchLocationSuggestions(e.target.value);
+                            }}
+                            onFocus={() => currentLocation.city.length >= 2 && setShowLocationSuggestions(true)}
+                            onBlur={() => setTimeout(() => setShowLocationSuggestions(false), 200)}
+                            className="trip-input small"
+                          />
+                          {showLocationSuggestions && locationSuggestions.length > 0 && (
+                            <div className="autocomplete-dropdown modern-dropdown">
+                              {locationSuggestions.map((location) => (
+                                <div
+                                  key={location.place_id}
+                                  className="autocomplete-item modern-item"
+                                  onClick={() => handleLocationSelect(location)}
+                                >
+                                  <svg className="item-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <rect x="3" y="3" width="7" height="7"></rect>
+                                    <rect x="14" y="3" width="7" height="7"></rect>
+                                    <rect x="14" y="14" width="7" height="7"></rect>
+                                    <rect x="3" y="14" width="7" height="7"></rect>
+                                  </svg>
+                                  <div className="item-content">
+                                    <div className="autocomplete-main">{location.city}</div>
+                                    <div className="autocomplete-secondary">{location.state}</div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <input
+                          type="text"
+                          placeholder="State"
+                          value={currentLocation.state}
+                          onChange={(e) => setCurrentLocation({...currentLocation, state: e.target.value})}
+                          className="trip-input small"
+                        />
+                      </div>
+                      
+                      <DateRangePicker
+                        startDate={currentLocation.startDate}
+                        endDate={currentLocation.endDate}
+                        onStartDateChange={(date) => {
+                          setCurrentLocation((prev) => ({...prev, startDate: date}));
+                        }}
+                        onEndDateChange={(date) => {
+                          setCurrentLocation((prev) => ({...prev, endDate: date}));
+                        }}
+                      />
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={handleAddLocation}
+                      className={`circular-add-btn ${editingLocationId ? 'update-mode' : ''}`}
+                      aria-label={editingLocationId ? "Update destination" : "Add destination"}
+                      title={editingLocationId ? "Update destination" : tripLocations.length > 0 ? "Add another destination" : "Add destination"}
+                    >
+                      {editingLocationId ? (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      ) : (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <line x1="12" y1="5" x2="12" y2="19"></line>
+                          <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+
+                  {tripLocations.length > 0 && (
+                    <div className="added-locations">
+                      {tripLocations.map(location => (
+                        <div key={location.id} className={`location-chip ${editingLocationId === location.id ? 'editing' : ''}`}>
+                          <div className="location-chip-content">
+                            <span className="location-name">{location.city}, {location.state}</span>
+                            <span className="location-dates">
+                              {new Date(location.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              {location.endDate && ` - ${new Date(location.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                            </span>
+                          </div>
+                          <div className="location-chip-actions">
+                            <button
+                              onClick={() => handleEditLocation(location.id)}
+                              className="edit-location-btn"
+                              aria-label="Edit destination"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleRemoveLocation(location.id)}
+                              className="remove-location-btn"
+                              aria-label="Remove destination"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="trip-modal-footer">
+                  <button
+                    onClick={() => setShowTripModal(false)}
+                    className="trip-cancel-btn"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateTrip}
+                    className="trip-create-btn"
+                  >
+                    Create Trip
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </Layout>
+    );
+  }
+
+  if (!selectedTrip && trips.length > 0) {
     return (
       <Layout>
         <div className="planner-page">
           <div className="no-trip-selected">
             <h2>No Trip Selected</h2>
-            <p>Please select a trip to view the planner, or create a new trip from the Home page.</p>
+            <p>Please select a trip to view the planner.</p>
             <button 
               className="back-home-btn"
               onClick={() => window.location.href = '/'}
@@ -1130,41 +1624,52 @@ const Planner = () => {
     <Layout>
       <div className="planner-page">
         <div className="planner-header">
-          <div className="trip-selector">
-            {/* Custom Dropdown - Closed State */}
-            <div 
-              className="dropdown-trigger"
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            >
-              <span>{selectedTrip?.trip_name || selectedTrip?.group_name || 'Select a trip'}</span>
-              <svg 
-                className={`dropdown-chevron ${isDropdownOpen ? 'open' : ''}`}
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24" 
-                xmlns="http://www.w3.org/2000/svg"
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div className="trip-selector">
+              {/* Custom Dropdown - Closed State */}
+              <div 
+                className="dropdown-trigger"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
-              </svg>
+                <span>{selectedTrip?.trip_name || selectedTrip?.group_name || 'Select a trip'}</span>
+                <svg 
+                  className={`dropdown-chevron ${isDropdownOpen ? 'open' : ''}`}
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24" 
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </div>
+
+              {/* Custom Dropdown - Open State */}
+              {isDropdownOpen && (
+                <div className="dropdown-menu">
+                  {trips.map(trip => (
+                    <div
+                      key={trip.trip_id}
+                      className={`dropdown-item ${selectedTrip?.trip_id === trip.trip_id ? 'selected' : ''}`}
+                      onClick={() => {
+                        handleTripChange(trip);
+                        setIsDropdownOpen(false);
+                      }}
+                    >
+                      <span>{trip.trip_name || trip.group_name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Custom Dropdown - Open State */}
-            {isDropdownOpen && (
-              <div className="dropdown-menu">
-                {trips.map(trip => (
-                  <div
-                    key={trip.trip_id}
-                    className={`dropdown-item ${selectedTrip?.trip_id === trip.trip_id ? 'selected' : ''}`}
-                    onClick={() => {
-                      handleTripChange(trip);
-                      setIsDropdownOpen(false);
-                    }}
-                  >
-                    <span>{trip.trip_name || trip.group_name}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* New Trip Button */}
+            <button className="new-trip-btn" onClick={() => setShowTripModal(true)}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              New Trip
+            </button>
           </div>
 
           {/* Member list display */}
@@ -1765,6 +2270,262 @@ const Planner = () => {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trip Creation Modal */}
+      {showTripModal && (
+        <div className="trip-modal-overlay" onClick={() => setShowTripModal(false)}>
+          <div className="trip-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="trip-modal-header">
+              <h2>Create New Trip</h2>
+              <button className="trip-modal-close" onClick={() => setShowTripModal(false)}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+            <div className="trip-modal-body">
+              {/* Trip Basic Info */}
+              <div className="trip-form-section">
+                <label>Trip Name *</label>
+                <input
+                  type="text"
+                  placeholder="e.g., Summer Europe Adventure"
+                  value={tripForm.tripName}
+                  onChange={(e) => setTripForm({...tripForm, tripName: e.target.value})}
+                  className="trip-input"
+                />
+              </div>
+
+              <div className="trip-form-section">
+                <label>Description</label>
+                <textarea
+                  placeholder="Add trip details..."
+                  value={tripForm.description}
+                  onChange={(e) => setTripForm({...tripForm, description: e.target.value})}
+                  className="trip-textarea"
+                  rows="3"
+                />
+              </div>
+
+              {/* Invite Friends Section */}
+              {tripFriends.length > 0 && (
+                <div className="trip-form-section">
+                  <label>Invite Friends (Optional)</label>
+                  
+                  {/* Search Friends */}
+                  <div className="friend-search-container">
+                    <input
+                      type="text"
+                      placeholder="Search friends..."
+                      value={friendSearchQuery}
+                      onChange={(e) => setFriendSearchQuery(e.target.value)}
+                      className="trip-input"
+                      style={{ marginBottom: '1rem' }}
+                    />
+                  </div>
+
+                  <div className="friends-selection-grid">
+                    {(() => {
+                      const filteredFriends = tripFriends.filter(friend => {
+                        const searchLower = friendSearchQuery.toLowerCase();
+                        return (
+                          `${friend.first_name} ${friend.last_name}`.toLowerCase().includes(searchLower) ||
+                          friend.username?.toLowerCase().includes(searchLower)
+                        );
+                      });
+                      
+                      // Show only 2 suggestions if not searching and not showing all
+                      const friendsToShow = friendSearchQuery || showAllFriends 
+                        ? filteredFriends 
+                        : filteredFriends.slice(0, 2);
+                      
+                      return friendsToShow.map(friend => (
+                        <div 
+                          key={friend.user_id}
+                          className={`friend-chip ${selectedFriends.includes(friend.user_id) ? 'selected' : ''}`}
+                          onClick={() => toggleFriendSelection(friend.user_id)}
+                        >
+                          <div className="friend-chip-avatar">
+                            {friend.first_name.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="friend-chip-name">{friend.first_name} {friend.last_name}</span>
+                          {selectedFriends.includes(friend.user_id) && (
+                            <svg className="friend-check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                          )}
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                  
+                  {/* Show More/Less button */}
+                  {!friendSearchQuery && tripFriends.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllFriends(!showAllFriends)}
+                      className="show-more-friends-btn"
+                      style={{ marginTop: '0.75rem' }}
+                    >
+                      {showAllFriends ? 'Show Less' : `Show ${tripFriends.length - 2} More`}
+                    </button>
+                  )}
+                  
+                  {selectedFriends.length > 0 && (
+                    <p className="selected-friends-count">
+                      {selectedFriends.length} friend{selectedFriends.length > 1 ? 's' : ''} selected
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Add Destinations Section */}
+              <div className="trip-form-section">
+                <label>Add Destinations</label>
+                
+                <div className="add-destination-container">
+                  <div className="destination-input-box">
+                    <div className="location-input-row">
+                      <div className="location-input-wrapper">
+                        <input
+                          type="text"
+                          placeholder="City"
+                          value={currentLocation.city}
+                          onChange={(e) => {
+                            setCurrentLocation({...currentLocation, city: e.target.value});
+                            fetchLocationSuggestions(e.target.value);
+                          }}
+                          onFocus={() => currentLocation.city.length >= 2 && setShowLocationSuggestions(true)}
+                          onBlur={() => setTimeout(() => setShowLocationSuggestions(false), 200)}
+                          className="trip-input small"
+                        />
+                        {showLocationSuggestions && locationSuggestions.length > 0 && (
+                          <div className="autocomplete-dropdown modern-dropdown">
+                            {locationSuggestions.map((location) => (
+                              <div
+                                key={location.place_id}
+                                className="autocomplete-item modern-item"
+                                onClick={() => handleLocationSelect(location)}
+                              >
+                                <svg className="item-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <rect x="3" y="3" width="7" height="7"></rect>
+                                  <rect x="14" y="3" width="7" height="7"></rect>
+                                  <rect x="14" y="14" width="7" height="7"></rect>
+                                  <rect x="3" y="14" width="7" height="7"></rect>
+                                </svg>
+                                <div className="item-content">
+                                  <div className="autocomplete-main">{location.city}</div>
+                                  <div className="autocomplete-secondary">{location.state}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <input
+                        type="text"
+                        placeholder="State"
+                        value={currentLocation.state}
+                        onChange={(e) => setCurrentLocation({...currentLocation, state: e.target.value})}
+                        className="trip-input small"
+                      />
+                    </div>
+                    
+                    {/* Date Range Picker */}
+                    <DateRangePicker
+                      startDate={currentLocation.startDate}
+                      endDate={currentLocation.endDate}
+                      onStartDateChange={(date) => {
+                        setCurrentLocation((prev) => ({...prev, startDate: date}));
+                      }}
+                      onEndDateChange={(date) => {
+                        setCurrentLocation((prev) => ({...prev, endDate: date}));
+                      }}
+                    />
+                  </div>
+                  
+                  {/* Always show + button */}
+                  <button
+                    type="button"
+                    onClick={handleAddLocation}
+                    className={`circular-add-btn ${editingLocationId ? 'update-mode' : ''}`}
+                    aria-label={editingLocationId ? "Update destination" : "Add destination"}
+                    title={editingLocationId ? "Update destination" : tripLocations.length > 0 ? "Add another destination" : "Add destination"}
+                  >
+                    {editingLocationId ? (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    ) : (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                      </svg>
+                    )}
+                  </button>
+                </div>
+
+                {/* Added Locations List */}
+                {tripLocations.length > 0 && (
+                  <div className="added-locations">
+                    {tripLocations.map(location => (
+                      <div key={location.id} className={`location-chip ${editingLocationId === location.id ? 'editing' : ''}`}>
+                        <div className="location-chip-content">
+                          <span className="location-name">{location.city}, {location.state}</span>
+                          <span className="location-dates">
+                            {new Date(location.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            {location.endDate && ` - ${new Date(location.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                          </span>
+                        </div>
+                        <div className="location-chip-actions">
+                          <button
+                            onClick={() => handleEditLocation(location.id)}
+                            className="edit-location-btn"
+                            aria-label="Edit destination"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => handleRemoveLocation(location.id)}
+                            className="remove-location-btn"
+                            aria-label="Remove destination"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <line x1="18" y1="6" x2="6" y2="18"></line>
+                              <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="trip-modal-footer">
+                <button
+                  onClick={() => setShowTripModal(false)}
+                  className="trip-cancel-btn"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateTrip}
+                  className="trip-create-btn"
+                >
+                  Create Trip
+                </button>
+              </div>
             </div>
           </div>
         </div>

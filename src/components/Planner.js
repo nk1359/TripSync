@@ -172,26 +172,21 @@ const Planner = () => {
     if (selectedTrip) {
       // Check if there's a new item from sessionStorage (optimistic update)
       const newItemJson = sessionStorage.getItem('newPlannerItem');
-      console.log('[PLANNER] Checking for new item in sessionStorage:', newItemJson);
       
       if (newItemJson) {
         try {
           const newItem = JSON.parse(newItemJson);
-          console.log('[PLANNER] Found new item, adding optimistically:', newItem);
           
           // Add the new item to the list immediately
           setPlannerItems(prevItems => {
-            console.log('[PLANNER] Current items:', prevItems.length, '+ new item');
             return [...prevItems, newItem];
           });
           
           // Clear from sessionStorage
           sessionStorage.removeItem('newPlannerItem');
-          console.log('[PLANNER] Cleared sessionStorage, scheduling background fetch in 500ms');
           
           // Fetch full data in background (will update distances)
           setTimeout(() => {
-            console.log('[PLANNER] Background fetch starting now');
             fetchPlannerItems();
           }, 500);
         } catch (e) {
@@ -199,7 +194,6 @@ const Planner = () => {
           fetchPlannerItems();
         }
       } else {
-        console.log('[PLANNER] No new item found, doing normal fetch');
         fetchPlannerItems();
         fetchTripDestinations(selectedTrip.trip_id);
       }
@@ -244,7 +238,6 @@ const Planner = () => {
   const fetchTrips = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/trips/${currentUserId}`);
-      console.log('Fetched trips:', response.data.trips);
       
       // Sort trips by start date - most recent upcoming trip first
       const sortedTrips = (response.data.trips || []).sort((a, b) => {
@@ -265,7 +258,6 @@ const Planner = () => {
         // Find and select the specific trip from URL
         const tripToSelect = sortedTrips.find(t => t.trip_id === parseInt(tripIdParam));
         if (tripToSelect) {
-          console.log('Selecting trip from URL:', tripToSelect);
           setSelectedTrip(tripToSelect);
           return;
         }
@@ -273,7 +265,6 @@ const Planner = () => {
       
       // If no trip is selected and there are trips, select the first one (most upcoming)
       if (!selectedTrip && sortedTrips.length > 0) {
-        console.log('Auto-selecting first trip (most upcoming):', sortedTrips[0]);
         setSelectedTrip(sortedTrips[0]);
       }
     } catch (error) {
@@ -291,18 +282,6 @@ const Planner = () => {
   const fetchTripDestinations = async (tripId) => {
     try {
       const response = await axios.get(`${API_URL}/api/trips/${tripId}/destinations`);
-      console.log('🗺️ Fetched trip destinations:', response.data.destinations);
-      if (response.data.destinations && response.data.destinations.length > 0) {
-        response.data.destinations.forEach((dest, idx) => {
-          console.log(`🗺️ Destination ${idx}:`, {
-            destination: dest.destination,
-            start_date: dest.start_date,
-            start_date_type: typeof dest.start_date,
-            end_date: dest.end_date,
-            end_date_type: typeof dest.end_date
-          });
-        });
-      }
       setTripDestinations(response.data.destinations || []);
       return response.data.destinations || [];
     } catch (error) {
@@ -342,22 +321,17 @@ const Planner = () => {
       return date; // NO CONVERSION - keep as plain string
     }
     
-    console.log('⚠️ Planner formatDateForAPI: Unexpected date format:', date, typeof date);
     return null;
   };
 
   // Helper function to display dates from database without timezone conversion
   const formatDateDisplay = (dateStr) => {
-    console.log('🔍 formatDateDisplay called with:', dateStr, typeof dateStr);
     if (!dateStr) return '';
     const parts = dateStr.split('-');
-    console.log('🔍 Split into parts:', parts);
     const [year, month, day] = parts.map(Number);
-    console.log('🔍 Parsed numbers:', { year, month, day });
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const result = `${monthNames[month - 1]} ${day}`;
-    console.log('🔍 formatDateDisplay result:', result);
     return result;
   };
 
@@ -576,10 +550,8 @@ const Planner = () => {
       if (!skipPlaceIdFix) {
         const itemsWithoutPlaceId = response.data.items?.filter(item => !item.google_place_id && item.item_type !== 'custom') || [];
         if (itemsWithoutPlaceId.length > 0) {
-          console.log('[AUTO-FIX] Found items without Google Place IDs, fixing automatically...');
           axios.post(`${API_URL}/api/planner/${selectedTrip.trip_id}/fix-place-ids`)
             .then(res => {
-              console.log('[AUTO-FIX] Place IDs updated:', res.data);
               // Refresh to get photos (skip auto-fix to avoid loop)
               setTimeout(() => fetchPlannerItems(true, true), 500);
             })
@@ -593,12 +565,11 @@ const Planner = () => {
         setTimeout(() => {
           axios.post(`${API_URL}/api/planner/${selectedTrip.trip_id}/calculate-distances`)
             .then(res => {
-              console.log('[DISTANCE] Background calculation complete:', res.data);
               // Refresh items to get updated distances
               fetchPlannerItems(true, true); // Skip distance calc and place ID fix on refresh
             })
             .catch(err => {
-              console.log('[DISTANCE] Calculation skipped or failed:', err.response?.data);
+              // Distance calculation failed or skipped
             });
         }, 100);
       }
@@ -842,8 +813,6 @@ const Planner = () => {
 
   // Recommendations functions
   const fetchRecommendations = async (day, lastItem, filterType = 'all') => {
-    console.log('🔍 fetchRecommendations called:', { day, lastItem, filterType });
-    
     let latitude, longitude;
     let locationName = null;
     
@@ -851,7 +820,6 @@ const Planner = () => {
     if (lastItem?.latitude && lastItem?.longitude) {
       latitude = lastItem.latitude;
       longitude = lastItem.longitude;
-      console.log('✅ Using coordinates from last item:', latitude, longitude);
     }
     // Otherwise, if we have trip destinations, use text-based search
     else if (tripDestinations.length > 0) {
@@ -870,13 +838,10 @@ const Planner = () => {
         locationName = destination.destination;
         latitude = destination.lat;
         longitude = destination.lng;
-        console.log('✅ Using text search for destination (popular places):', locationName);
       } else {
-        console.warn('⚠️ No destination name available');
         return;
       }
     } else {
-      console.warn('⚠️ No coordinates for last item and no trip destinations:', lastItem);
       return;
     }
     
@@ -906,8 +871,6 @@ const Planner = () => {
       const response = await axios.post(`${API_URL}/api/planner/recommendations`, requestBody);
       
       if (response.data.recommendations) {
-        console.log('📥 Received recommendations:', response.data.recommendations.length);
-        
         // Filter out recommendations that are already in the planner
         const existingPlaceIds = plannerItems
           .filter(item => item.google_place_id)
@@ -917,14 +880,10 @@ const Planner = () => {
           rec => !existingPlaceIds.includes(rec.place_id)
         );
         
-        console.log('✨ Filtered recommendations:', filteredRecommendations.length);
-        
         setRecommendations(prev => ({
           ...prev,
           [day]: filteredRecommendations
         }));
-      } else {
-        console.warn('⚠️ No recommendations in response');
       }
     } catch (error) {
       console.error('Error fetching recommendations:', error);
@@ -1049,46 +1008,34 @@ const Planner = () => {
 
   // Helper function to determine item type from Google Place types
   const getItemTypeFromPlaceTypes = (types) => {
-    console.log('🏷️ Getting item type from types:', types);
-    
     if (!types || !Array.isArray(types)) {
-      console.log('⚠️ No valid types array, defaulting to activity');
       return 'activity';
     }
     
     // Priority-based mapping - CHECK SPECIFIC TYPES FIRST (not generic ones like point_of_interest)
     if (types.includes('lodging') || types.includes('hotel')) {
-      console.log('✅ Detected lodging/hotel -> accommodation');
       return 'accommodation';
     }
     if (types.includes('restaurant') || types.includes('cafe') || types.includes('food') || types.includes('bar') || types.includes('meal_takeaway') || types.includes('meal_delivery')) {
-      console.log('✅ Detected food place -> food');
       return 'food';
     }
     if (types.includes('airport') || types.includes('train_station') || types.includes('transit_station') || types.includes('bus_station') || types.includes('subway_station')) {
-      console.log('✅ Detected transit -> transport');
       return 'transport';
     }
     // Only check SPECIFIC attraction types, not generic 'point_of_interest' or 'establishment'
     if (types.includes('tourist_attraction') || types.includes('museum') || types.includes('art_gallery') || 
         types.includes('park') || types.includes('natural_feature') || types.includes('amusement_park') ||
         types.includes('aquarium') || types.includes('zoo') || types.includes('stadium') || types.includes('movie_theater')) {
-      console.log('✅ Detected specific attraction -> activity');
       return 'activity';
     }
     if (types.includes('shopping_mall') || types.includes('store') || types.includes('department_store')) {
-      console.log('✅ Detected shopping -> activity');
       return 'activity';
     }
     
-    console.log('⚠️ No specific match, defaulting to activity. Types were:', types);
     return 'activity'; // Default
   };
 
   const handleAddRecommendationToPlanner = async (recommendation, day, filterType) => {
-    console.log('📍 Adding recommendation:', recommendation);
-    console.log('📍 Filter type:', filterType);
-    
     // Use filter type directly as item type, except for 'all' which auto-detects
     let itemType;
     if (filterType === 'all') {
@@ -1098,8 +1045,6 @@ const Planner = () => {
       // Use the filter type exactly as it appears
       itemType = filterType;
     }
-    
-    console.log('📍 Final item type:', itemType);
     
     try {
       const response = await axios.post(`${API_URL}/api/planner/items`, {
@@ -1137,15 +1082,11 @@ const Planner = () => {
 
   // Fetch recommendations when planner items change OR when trip destinations are loaded
   useEffect(() => {
-    console.log('📊 Planner items changed:', plannerItems.length, 'items');
-    console.log('🗺️ Trip destinations:', tripDestinations.length, 'destinations');
-    
     if (selectedTrip) {
       if (plannerItems.length > 0) {
         // Normal flow: fetch recommendations based on planner items
       const itemsByDay = {};
       plannerItems.forEach(item => {
-          console.log('📍 Item:', item.item_name, 'Coords:', item.latitude, item.longitude);
         // Use start_date as the key (that's what the planner uses)
         const dayKey = item.start_date || item.date;
         if (!itemsByDay[dayKey]) {
@@ -1178,8 +1119,6 @@ const Planner = () => {
       }
       } else if (tripDestinations.length > 0) {
         // New trip with no items: fetch recommendations based on destination coordinates
-        console.log('🆕 New trip! Fetching recommendations based on destinations');
-        
         const tripDays = getTripDays();
         const updates = {};
         
@@ -1415,8 +1354,6 @@ const Planner = () => {
     
     if (!draggedItem || draggedItem.planner_id === targetItem.planner_id) return;
     
-    console.log('[DRAG] Dropping item:', draggedItem.item_name, dragPosition, 'target:', targetItem.item_name);
-    
     // Optimistic update - reorder items immediately
     setPlannerItems(prevItems => {
       // Remove the dragged item from all items
@@ -1433,13 +1370,9 @@ const Planner = () => {
       // Calculate insert position based on drag position
       const insertIndex = dragPosition === 'above' ? targetIndex : targetIndex + 1;
       
-      console.log('[DRAG] Target at index:', targetIndex, 'inserting at:', insertIndex);
-      
       // Create new array with item inserted at the correct position
       const newItems = [...withoutDragged];
       newItems.splice(insertIndex, 0, { ...draggedItem, start_date: targetDay, end_date: targetDay });
-      
-      console.log('[DRAG] Reordered. Item order:', newItems.map(i => i.item_name));
       
       return newItems;
     });
@@ -1458,17 +1391,13 @@ const Planner = () => {
         order_index: index
       }));
       
-      console.log('[DRAG] Saving order to backend:', itemsOrder);
-      
       // Send order update to backend
       axios.post(`${API_URL}/api/planner/items/reorder`, {
         items: itemsOrder
       }).then(() => {
-        console.log('[DRAG] Order saved, recalculating distances...');
         // Trigger distance recalculation after reordering
         return axios.post(`${API_URL}/api/planner/${selectedTrip.trip_id}/calculate-distances`);
       }).then(() => {
-        console.log('[DRAG] Distances recalculated, refreshing items...');
         // Refresh items to get updated distances
         fetchPlannerItems(true); // Skip another distance calc
       }).catch(error => {
@@ -1542,13 +1471,6 @@ const Planner = () => {
     const startDateStr = selectedTrip.start_date || selectedTrip.startDate;
     const endDateStr = selectedTrip.end_date || selectedTrip.endDate;
     
-    console.log('📅 getTripDays - Raw dates from trip:', {
-      startDateStr,
-      endDateStr,
-      startType: typeof startDateStr,
-      endType: typeof endDateStr
-    });
-    
     if (!startDateStr || !endDateStr) {
       return [];
     }
@@ -1576,11 +1498,6 @@ const Planner = () => {
       // Parse other formats
       end = new Date(endDateStr);
     }
-    
-    console.log('📅 getTripDays - Parsed dates:', {
-      start: start.toISOString(),
-      end: end.toISOString()
-    });
     
     const days = [];
     

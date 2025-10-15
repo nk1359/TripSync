@@ -1,0 +1,29 @@
+Fixes needed:
+-Message sent time and (date if it was not the same day).
+-Planner page shows the closest recomendations for an empty planner rather than the most popular in the city or state or country (whatever the user chose).
+-Planner --Users should be able to leave a trip owned by someone else.
+
+
+Next Features:
+
+1. Profile Page:
+Feature to Add and change profile pictures
+Freature to Change password
+
+2. On Chats
+remove names from direct messages but keep them on group chats.
+on both group chats and dms, friends profile picture should show up next to their name of top and next to the messages.
+Add a way to change group chat photo.
+Add a way to see active friends.
+
+3. On Planner: 
+Calendar view
+Ability to click on the address to get directions
+Ability to get directions by clicking directions button next to distance calculation.
+Ability to get directions for the entire date with each stop.
+
+4. Home page 
+Ability for users to sort trips based on: trip dates, modified date, name, date created. The default should be date created.
+
+Out of scope feature:
+AI Optimized Recomendations Tailored to users.

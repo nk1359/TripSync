@@ -486,8 +486,6 @@ const Home = () => {
       longitude: selectedPlaceForModal.lng
     };
     
-    console.log('📝 Adding to planner:', itemData);
-    
     try {
       const response = await fetch(`${API_URL}/api/planner/items`, {
         method: 'POST',
@@ -496,18 +494,11 @@ const Home = () => {
       });
 
       const data = await response.json();
-      console.log('✅ Add to planner response:', data);
 
       if (response.ok) {
-        console.log('[HOME] Item added successfully, response:', data);
-        
         // Store the new item in sessionStorage for optimistic update
         if (data.item) {
-          console.log('[HOME] Storing new item in sessionStorage:', data.item);
           sessionStorage.setItem('newPlannerItem', JSON.stringify(data.item));
-          console.log('[HOME] Stored in sessionStorage, value:', sessionStorage.getItem('newPlannerItem'));
-        } else {
-          console.warn('[HOME] No item in response data');
         }
         
         setShowTripSelector(false);
@@ -530,7 +521,6 @@ const Home = () => {
     
     // Handle different date formats
     if (typeof dateStr !== 'string') {
-      console.warn('parseDateString: dateStr is not a string:', dateStr, typeof dateStr);
       return null;
     }
     
@@ -543,7 +533,6 @@ const Home = () => {
     }
     
     // Fallback: try parsing other formats (but this might have timezone issues)
-    console.warn('parseDateString: Date not in YYYY-MM-DD format:', dateStr);
     const fallbackDate = new Date(dateStr);
     return isNaN(fallbackDate.getTime()) ? null : fallbackDate;
   };
@@ -575,7 +564,6 @@ const Home = () => {
       return date; // NO CONVERSION - keep as plain string
     }
     
-    console.warn('⚠️ Unexpected date format received:', date, typeof date);
     return null;
   };
 
@@ -917,7 +905,6 @@ const Home = () => {
         images = ['https://via.placeholder.com/600x400/1a1a2e/ffffff?text=No+Image'];
       }
       
-      console.log(`Loaded ${images.length} images for ${place.place_name}`);
       setPlaceImages(images);
     } catch (error) {
       console.error('Error fetching place details:', error);

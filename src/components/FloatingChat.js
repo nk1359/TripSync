@@ -79,7 +79,6 @@ const FloatingChat = () => {
       // Remove isRestored flag before saving
       const chatsToSave = openChatWindows.map(({ isRestored, ...chat }) => chat);
       sessionStorage.setItem('openChatWindows', JSON.stringify(chatsToSave));
-      console.log('[FLOATING-CHAT] Persisted chat windows:', chatsToSave);
     } else {
       sessionStorage.removeItem('openChatWindows');
     }
@@ -88,7 +87,6 @@ const FloatingChat = () => {
   const fetchChats = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/chats/user/${currentUser.user_id}`);
-      console.log('[FLOATING-CHAT] Fetched chats:', response.data);
       setChats(response.data.chats || []);
     } catch (error) {
       console.error('[FLOATING-CHAT] Error fetching chats:', error);
@@ -98,7 +96,6 @@ const FloatingChat = () => {
   const fetchDirectChats = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/chats/direct/user/${currentUser.user_id}?include_archived=${showArchived}`);
-      console.log('[FLOATING-CHAT] Fetched direct chats:', response.data);
       setDirectChats(response.data.chats || []);
     } catch (error) {
       console.error('[FLOATING-CHAT] Error fetching direct chats:', error);
@@ -108,7 +105,6 @@ const FloatingChat = () => {
   const fetchFriends = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/friends/${currentUser.user_id}`);
-      console.log('[FLOATING-CHAT] Fetched friends:', response.data);
       setFriends(response.data.friends || []);
     } catch (error) {
       console.error('[FLOATING-CHAT] Error fetching friends:', error);

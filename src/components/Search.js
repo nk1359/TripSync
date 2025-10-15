@@ -598,8 +598,6 @@ const Search = () => {
   };
 
   const handleSearch = async () => {
-    console.log('[SEARCH] Starting search with form:', searchForm);
-    
     if (!searchForm.placeType && searchForm.selectedCategories.length === 0) {
       showToast('Please enter what you\'re looking for or select a category', 'info');
       return;
@@ -621,10 +619,7 @@ const Search = () => {
         queryString = `${placeTypeSlug}-in-${citySlug}${stateSlug}`;
       }
       
-      console.log('[URL] Setting search params:', queryString);
-      console.log('[URL] Current URL before:', window.location.href);
       setSearchParams({ q: queryString });
-      console.log('[URL] Current URL after:', window.location.href);
     }
 
     setSearchLoading(true);

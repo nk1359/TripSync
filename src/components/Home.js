@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useRef, useContext } from 'react';
+import React, { useEffect, useState, useRef, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from './AuthContext';
 import { useToast } from './ToastContext';
@@ -6,7 +6,8 @@ import Layout from './Layout';
 import './styles/Home.css';
 import AddToCalendarModal from './AddToCalendarModal';
 import DateRangePicker from './DateRangePicker';
-import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft, FaChevronRight, FaTimes } from 'react-icons/fa';
+import EditTripModal from './EditTripModal';
+import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft, FaChevronRight, FaTimes, FaEdit } from 'react-icons/fa';
 import API_URL from '../config';
 
 const Home = () => {
@@ -43,6 +44,8 @@ const Home = () => {
   const [tripForm, setTripForm] = useState({
     tripName: '',
     description: '',
+    startDate: '',
+    endDate: '',
     memberIds: []
   });
   const [tripFriends, setTripFriends] = useState([]); // Available friends to invite
@@ -60,6 +63,10 @@ const Home = () => {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [sentInvitations, setSentInvitations] = useState([]);
   const [myPendingRequests, setMyPendingRequests] = useState([]); // Requests I've made
+  
+  // Edit dates modal state
+  const [showEditDatesModal, setShowEditDatesModal] = useState(false);
+  const [tripToEdit, setTripToEdit] = useState(null);
   
   // Fetch friends when trip modal opens
   useEffect(() => {
@@ -86,10 +93,12 @@ const Home = () => {
     );
   };
   const [currentLocation, setCurrentLocation] = useState({
-    city: '',
-    state: '',
-    startDate: '',
-    endDate: ''
+    destination: '',
+    place_id: '',
+    lat: null,
+    lng: null,
+    startDate: null,
+    endDate: null
   });
   const [editingLocationId, setEditingLocationId] = useState(null);
   const [locationSuggestions, setLocationSuggestions] = useState([]);
@@ -472,10 +481,12 @@ const Home = () => {
       cost: null,
       notes: '',
       created_by: user.user_id,
-      google_place_id: selectedPlaceForModal.place_id
+      google_place_id: selectedPlaceForModal.place_id,
+      latitude: selectedPlaceForModal.lat,
+      longitude: selectedPlaceForModal.lng
     };
     
-    console.log('ðŸ“ Adding to planner:', itemData);
+    console.log('📝 Adding to planner:', itemData);
     
     try {
       const response = await fetch(`${API_URL}/api/planner/items`, {
@@ -485,7 +496,7 @@ const Home = () => {
       });
 
       const data = await response.json();
-      console.log('âœ… Add to planner response:', data);
+      console.log('✅ Add to planner response:', data);
 
       if (response.ok) {
         console.log('[HOME] Item added successfully, response:', data);
@@ -502,15 +513,8 @@ const Home = () => {
         setShowTripSelector(false);
         setSelectedPlaceForModal(null);
         
-        // Navigate back to planner if from planner
-        if (plannerContext) {
-          console.log('[HOME] Navigating back to planner with new item');
-          sessionStorage.removeItem('plannerContext');
-          setPlannerContext(null);
-          navigate('/planner');
-        } else {
-          showToast(`Added ${selectedPlaceForModal.place_name} to your trip!`, 'success');
-        }
+        // Show success message - user can manually navigate back when ready
+        showToast(`Added ${selectedPlaceForModal.place_name} to your trip!`, 'success');
       } else {
         showToast(data.error || 'Failed to add to planner', 'error');
       }
@@ -520,12 +524,36 @@ const Home = () => {
     }
   };
 
+  // Helper to parse date string without timezone conversion
+  const parseDateString = (dateStr) => {
+    if (!dateStr) return null;
+    
+    // Handle different date formats
+    if (typeof dateStr !== 'string') {
+      console.warn('parseDateString: dateStr is not a string:', dateStr, typeof dateStr);
+      return null;
+    }
+    
+    // If it's in YYYY-MM-DD format
+    if (dateStr.includes('-') && dateStr.length === 10) {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+        return new Date(year, month - 1, day);
+      }
+    }
+    
+    // Fallback: try parsing other formats (but this might have timezone issues)
+    console.warn('parseDateString: Date not in YYYY-MM-DD format:', dateStr);
+    const fallbackDate = new Date(dateStr);
+    return isNaN(fallbackDate.getTime()) ? null : fallbackDate;
+  };
+
   // Get trip days for date picker
   const getTripDays = (trip) => {
     if (!trip || !trip.start_date || !trip.end_date) return [];
     
-    const start = new Date(trip.start_date);
-    const end = new Date(trip.end_date);
+    const start = parseDateString(trip.start_date);
+    const end = parseDateString(trip.end_date);
     const days = [];
     
     for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
@@ -533,6 +561,22 @@ const Home = () => {
     }
     
     return days;
+  };
+
+  // Helper function to format date - keep as plain string, no conversions
+  const formatDateForAPI = (date) => {
+    // Return null for empty/null/undefined
+    if (!date || date === '') {
+      return null;
+    }
+    
+    // If date is already a string in YYYY-MM-DD format, return it as-is
+    if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return date; // NO CONVERSION - keep as plain string
+    }
+    
+    console.warn('⚠️ Unexpected date format received:', date, typeof date);
+    return null;
   };
 
   // Fetch location suggestions for trip creation
@@ -544,15 +588,15 @@ const Home = () => {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/autocomplete/cities?query=${encodeURIComponent(query)}`);
+      const response = await fetch(`${API_URL}/api/autocomplete/places?query=${encodeURIComponent(query)}`);
       const data = await response.json();
       
       const formatted = (data || []).map(item => {
         const parts = item.description.split(',').map(p => p.trim());
         return {
           place_id: item.place_id,
-          city: parts[0],
-          state: parts.length > 1 ? parts[parts.length - 2] : '',
+          main_text: parts[0],
+          secondary_text: parts.slice(1).join(', '),
           description: item.description
         };
       });
@@ -566,8 +610,8 @@ const Home = () => {
 
   // Add another location (saves current and prepares for next)
   const handleAddLocation = () => {
-    if (!currentLocation.city || !currentLocation.startDate) {
-      showToast('Please enter city and start date', 'info');
+    if (!currentLocation.destination || !currentLocation.startDate) {
+      showToast('Please enter destination and start date', 'info');
       return;
     }
 
@@ -583,7 +627,7 @@ const Home = () => {
     }
     
     // Clear form to add another location
-    setCurrentLocation({ city: '', state: '', startDate: '', endDate: '' });
+    setCurrentLocation({ destination: '', place_id: '', lat: null, lng: null, startDate: null, endDate: null });
   };
 
   // Edit location
@@ -601,18 +645,35 @@ const Home = () => {
     // If we're editing this location, clear the edit state
     if (editingLocationId === locationId) {
       setEditingLocationId(null);
-      setCurrentLocation({ city: '', state: '', startDate: '', endDate: '' });
+      setCurrentLocation({ destination: '', place_id: '', lat: null, lng: null, startDate: null, endDate: null });
     }
   };
 
   // Select location from suggestions
-  const handleLocationSelect = (location) => {
-    setCurrentLocation(prev => ({
-      ...prev,
-      city: location.city,
-      state: location.state
-    }));
-    setShowLocationSuggestions(false);
+  const handleLocationSelect = async (location) => {
+    try {
+      // Fetch place details to get coordinates
+      const response = await fetch(`${API_URL}/api/place-details?place_id=${location.place_id}`);
+      const data = await response.json();
+      
+      setCurrentLocation(prev => ({
+        ...prev,
+        destination: location.description,
+        place_id: location.place_id,
+        lat: data.lat,
+        lng: data.lng
+      }));
+      setShowLocationSuggestions(false);
+    } catch (error) {
+      console.error('Error fetching place details:', error);
+      // Fallback: just set the text without coordinates
+      setCurrentLocation(prev => ({
+        ...prev,
+        destination: location.description,
+        place_id: location.place_id
+      }));
+      setShowLocationSuggestions(false);
+    }
   };
 
   // Create new trip
@@ -622,41 +683,50 @@ const Home = () => {
       return;
     }
 
-    // Auto-add current location if it has data and hasn't been added yet
+    // Auto-add current location if it has data
     let finalLocations = [...tripLocations];
-    if (currentLocation.city && currentLocation.state && currentLocation.startDate) {
+    if (currentLocation.destination && currentLocation.startDate) {
       finalLocations.push({ ...currentLocation, id: Date.now() });
     }
 
     if (finalLocations.length === 0) {
-      showToast('Please add at least one location', 'info');
+      showToast('Please add at least one destination', 'info');
       return;
     }
 
-    // Get the earliest start date and latest end date from locations
+    // Calculate trip dates from destinations
     const startDates = finalLocations.map(loc => loc.startDate).filter(date => date);
-    const endDates = finalLocations.map(loc => loc.endDate).filter(date => date);
+    const endDates = finalLocations.map(loc => loc.endDate || loc.startDate).filter(date => date);
     
-    if (startDates.length === 0 || endDates.length === 0) {
-      showToast('Please ensure all locations have valid dates', 'info');
+    if (startDates.length === 0) {
+      showToast('Please ensure all destinations have dates', 'info');
       return;
     }
 
-    const tripStartDate = new Date(Math.min(...startDates.map(date => new Date(date))));
-    const tripEndDate = new Date(Math.max(...endDates.map(date => new Date(date))));
+    // Sort dates as strings (YYYY-MM-DD format sorts correctly)
+    const tripStartDate = startDates.sort()[0];
+    const tripEndDate = endDates.sort()[endDates.length - 1];
 
     try {
-      // Create trip without automatically adding members
+      // Create trip
       const response = await fetch(`${API_URL}/api/trips`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           trip_name: tripForm.tripName,
           description: tripForm.description,
-          start_date: tripStartDate.toISOString().split('T')[0],
-          end_date: tripEndDate.toISOString().split('T')[0],
+          start_date: formatDateForAPI(tripStartDate),
+          end_date: formatDateForAPI(tripEndDate),
           created_by: user.user_id,
-          member_ids: []  // Don't auto-add friends
+          member_ids: [],
+          destinations: finalLocations.map(loc => ({
+            destination: loc.destination,
+            place_id: loc.place_id,
+            lat: loc.lat,
+            lng: loc.lng,
+            start_date: formatDateForAPI(loc.startDate),
+            end_date: formatDateForAPI(loc.endDate || loc.startDate)
+          }))
         })
       });
 
@@ -690,12 +760,13 @@ const Home = () => {
         }
         
         setShowTripModal(false);
-        setTripForm({ tripName: '', description: '', memberIds: [] });
+        setTripForm({ tripName: '', description: '', startDate: '', endDate: '', memberIds: [] });
         setTripLocations([]);
+        setCurrentLocation({ destination: '', place_id: '', lat: null, lng: null, startDate: '', endDate: '' });
         setSelectedFriends([]);
         setFriendSearchQuery('');
         setShowAllFriends(false);
-        fetchTrips(); // Refresh trips
+        fetchTrips();
       } else {
         showToast(data.error || 'Failed to create trip', 'error');
       }
@@ -709,28 +780,28 @@ const Home = () => {
   const loadFeaturedCards = () => {
     const cards = user ? [
       {
-        icon: "ðŸ”",
+        icon: "🔍",
         title: "Quick Search",
         description: "Find restaurants, attractions, or any place you're looking for",
         action: "Search Now",
         color: "linear-gradient(45deg, #ff6b6b, #ee5a24)"
       },
       {
-        icon: "ðŸ“…",
+        icon: "📅",
         title: "Upcoming Events",
         description: "2 events this weekend - NYC Food Tour & Central Park Picnic",
         action: "View Calendar",
         color: "linear-gradient(45deg, #4ecdc4, #44a08d)"
       },
       {
-        icon: "ðŸ’¬",
+        icon: "💬",
         title: "Group Messages",
         description: "3 new messages in your trip planning groups",
         action: "Check Messages",
         color: "linear-gradient(45deg, #a8edea, #fed6e3)"
       },
       {
-        icon: "â­",
+        icon: "⭐",
         title: "Saved Places",
         description: "12 places saved - ready for your next adventure",
         action: "View Favorites",
@@ -738,19 +809,19 @@ const Home = () => {
       }
     ] : [
       {
-        icon: "ðŸ—ºï¸",
+        icon: "🗺️",
         title: "Itinerary Builder",
         description: "Create detailed day-by-day plans with destinations, activities, and bookings",
         action: "Get Started"
       },
       {
-        icon: "ðŸ‘¥",
+        icon: "👥",
         title: "Collaborate",
         description: "Invite friends and family to plan together with real-time updates",
         action: "Get Started"
       },
       {
-        icon: "ðŸ“",
+        icon: "📍",
         title: "Save Places",
         description: "Bookmark hotels, restaurants, and attractions for easy reference",
         action: "Get Started"
@@ -953,9 +1024,9 @@ const Home = () => {
           <div className="trips-grid">
             {trips.length > 0 ? (
               trips.map((trip, index) => {
-                // Parse dates if available
-                const startDate = trip.start_date ? new Date(trip.start_date) : null;
-                const endDate = trip.end_date ? new Date(trip.end_date) : null;
+                // Parse dates if available - use parseDateString to avoid timezone issues
+                const startDate = trip.start_date ? parseDateString(trip.start_date) : null;
+                const endDate = trip.end_date ? parseDateString(trip.end_date) : null;
                 const isOwner = trip.role === 'owner';
                 
                 return (
@@ -998,6 +1069,19 @@ const Home = () => {
                               </svg>
                               {startDate && startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                               {endDate && ` - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
+                              {isOwner && (
+                                <button
+                                  className="edit-dates-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setTripToEdit(trip);
+                                    setShowEditDatesModal(true);
+                                  }}
+                                  title="Edit trip"
+                                >
+                                  <FaEdit />
+                                </button>
+                              )}
                             </span>
                           )}
                           
@@ -1150,10 +1234,10 @@ const Home = () => {
             </div>
             <div className="hero-visual">
               <div className="floating-cards">
-              <div className="floating-card card-1">ðŸ›ï¸</div>
-              <div className="floating-card card-2">ðŸ½ï¸</div>
-              <div className="floating-card card-3">ðŸ”ï¸</div>
-              <div className="floating-card card-4">ðŸŽ­</div>
+              <div className="floating-card card-1">🏛️</div>
+              <div className="floating-card card-2">🍽️</div>
+              <div className="floating-card card-3">🏔️</div>
+              <div className="floating-card card-4">🎭</div>
               </div>
             </div>
           </div>
@@ -1358,138 +1442,127 @@ const Home = () => {
                 </div>
               )}
 
-              {/* Add Destinations Section */}
+              {/* Destinations & Dates */}
               <div className="trip-form-section">
-                <label>Add Destinations</label>
-                
-                <div className="add-destination-container">
+                <label>Destinations & Dates *</label>
+                <div className="destinations-container">
+                  {/* Destination Input Box */}
                   <div className="destination-input-box">
-                    <div className="location-input-row">
-                      <div className="location-input-wrapper">
-                        <input
-                          type="text"
-                          placeholder="City"
-                          value={currentLocation.city}
-                          onChange={(e) => {
-                            setCurrentLocation({...currentLocation, city: e.target.value});
-                            fetchLocationSuggestions(e.target.value);
-                          }}
-                          onFocus={() => currentLocation.city.length >= 2 && setShowLocationSuggestions(true)}
-                          onBlur={() => setTimeout(() => setShowLocationSuggestions(false), 200)}
-                          className="trip-input small"
-                        />
-                        {showLocationSuggestions && locationSuggestions.length > 0 && (
-                          <div className="autocomplete-dropdown modern-dropdown">
-                            {locationSuggestions.map((location) => (
-                              <div
-                                key={location.place_id}
-                                className="autocomplete-item modern-item"
-                                onClick={() => handleLocationSelect(location)}
-                              >
-                                <svg className="item-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <rect x="3" y="3" width="7" height="7"></rect>
-                                  <rect x="14" y="3" width="7" height="7"></rect>
-                                  <rect x="14" y="14" width="7" height="7"></rect>
-                                  <rect x="3" y="14" width="7" height="7"></rect>
-                                </svg>
-                                <div className="item-content">
-                                  <div className="autocomplete-main">{location.city}</div>
-                                  <div className="autocomplete-secondary">{location.state}</div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
+                    <div className="location-input-wrapper">
                       <input
                         type="text"
-                        placeholder="State"
-                        value={currentLocation.state}
-                        onChange={(e) => setCurrentLocation({...currentLocation, state: e.target.value})}
-                        className="trip-input small"
+                        placeholder="Search destination (e.g., Paris, France or 123 Main St)"
+                        value={currentLocation.destination}
+                        onChange={(e) => {
+                          setCurrentLocation(prev => ({...prev, destination: e.target.value}));
+                          if (e.target.value.length >= 2) {
+                            fetchLocationSuggestions(e.target.value);
+                          }
+                        }}
+                        onFocus={() => currentLocation.destination?.length >= 2 && setShowLocationSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowLocationSuggestions(false), 200)}
+                        className="trip-input destination-search"
                       />
+                      {showLocationSuggestions && locationSuggestions.length > 0 && (
+                        <div className="autocomplete-dropdown modern-dropdown">
+                          {locationSuggestions.map((location) => (
+                            <div
+                              key={location.place_id}
+                              className="autocomplete-item modern-item"
+                              onClick={() => handleLocationSelect(location)}
+                            >
+                              <svg className="item-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                                <circle cx="12" cy="10" r="3"></circle>
+                              </svg>
+                              <div className="item-content">
+                                <div className="autocomplete-main">{location.main_text}</div>
+                                <div className="autocomplete-secondary">{location.secondary_text}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     
-                    {/* Date Range Picker */}
+                    {/* Date Range for this destination */}
                     <DateRangePicker
                       startDate={currentLocation.startDate}
                       endDate={currentLocation.endDate}
-                      onStartDateChange={(date) => {
-                        console.log('ðŸ”´ onStartDateChange called with:', date);
-                        setCurrentLocation((prev) => {
-                          console.log('ðŸ”´ Previous state:', prev);
-                          const updated = {...prev, startDate: date};
-                          console.log('ðŸ”´ Updated state:', updated);
-                          return updated;
-                        });
-                      }}
-                      onEndDateChange={(date) => {
-                        console.log('ðŸ”µ onEndDateChange called with:', date);
-                        setCurrentLocation((prev) => ({...prev, endDate: date}));
-                      }}
+                      onStartDateChange={(date) => setCurrentLocation(prev => ({...prev, startDate: date}))}
+                      onEndDateChange={(date) => setCurrentLocation(prev => ({...prev, endDate: date}))}
                     />
+                    
+                    {/* Add/Update Button */}
+                    <button
+                      type="button"
+                      onClick={handleAddLocation}
+                      className={`add-destination-btn ${editingLocationId ? 'update-mode' : ''}`}
+                      title={editingLocationId ? "Update destination" : "Add destination"}
+                    >
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        {editingLocationId ? (
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        ) : (
+                          <>
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                          </>
+                        )}
+                      </svg>
+                    </button>
                   </div>
-                  
-                  {/* Always show + button */}
-                  <button
-                    type="button"
-                    onClick={handleAddLocation}
-                    className={`circular-add-btn ${editingLocationId ? 'update-mode' : ''}`}
-                    aria-label={editingLocationId ? "Update destination" : "Add destination"}
-                    title={editingLocationId ? "Update destination" : tripLocations.length > 0 ? "Add another destination" : "Add destination"}
-                  >
-                    {editingLocationId ? (
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                      </svg>
-                    ) : (
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <line x1="12" y1="5" x2="12" y2="19"></line>
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                      </svg>
-                    )}
-                  </button>
-                </div>
 
-                {/* Added Locations List */}
-                {tripLocations.length > 0 && (
-                  <div className="added-locations">
-                    {tripLocations.map(location => (
-                      <div key={location.id} className={`location-chip ${editingLocationId === location.id ? 'editing' : ''}`}>
-                        <div className="location-chip-content">
-                          <span className="location-name">{location.city}, {location.state}</span>
-                          <span className="location-dates">
-                            {new Date(location.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            {location.endDate && ` - ${new Date(location.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
-                          </span>
+                  {/* Added Destinations List */}
+                  {tripLocations.length > 0 && (
+                    <div className="added-destinations">
+                      {tripLocations.map(location => {
+                        // Parse dates without timezone issues
+                        const formatDateDisplay = (dateStr) => {
+                          if (!dateStr) return '';
+                          const [year, month, day] = dateStr.split('-').map(Number);
+                          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                                              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                          return `${monthNames[month - 1]} ${day}, ${year}`;
+                        };
+                        
+                        return (
+                        <div key={location.id} className={`destination-chip ${editingLocationId === location.id ? 'editing' : ''}`}>
+                          <div className="destination-chip-content">
+                            <div className="destination-name">{location.destination}</div>
+                            <div className="destination-dates">
+                              {formatDateDisplay(location.startDate)}
+                              {location.endDate && ` - ${formatDateDisplay(location.endDate)}`}
+                            </div>
+                          </div>
+                          <div className="destination-chip-actions">
+                            <button
+                              onClick={() => handleEditLocation(location.id)}
+                              className="edit-destination-btn"
+                              title="Edit destination"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleRemoveLocation(location.id)}
+                              className="remove-destination-btn"
+                              title="Remove destination"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                              </svg>
+                            </button>
+                          </div>
                         </div>
-                        <div className="location-chip-actions">
-                          <button
-                            onClick={() => handleEditLocation(location.id)}
-                            className="edit-location-btn"
-                            aria-label="Edit destination"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => handleRemoveLocation(location.id)}
-                            className="remove-location-btn"
-                            aria-label="Remove destination"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <line x1="18" y1="6" x2="6" y2="18"></line>
-                              <line x1="6" y1="6" x2="18" y2="18"></line>
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Action Buttons */}
@@ -1510,6 +1583,20 @@ const Home = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Trip Modal */}
+      {showEditDatesModal && tripToEdit && (
+        <EditTripModal
+          trip={tripToEdit}
+          onClose={() => {
+            setShowEditDatesModal(false);
+            setTripToEdit(null);
+          }}
+          onSuccess={() => {
+            fetchTrips();
+          }}
+        />
       )}
 
       {/* Manage Members Modal */}
@@ -1549,6 +1636,7 @@ const Home = () => {
                           <button 
                             onClick={() => handleRemoveMemberFromTrip(member.user_id)}
                             className="remove-member-btn"
+                            title="Remove member"
                           >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -1559,95 +1647,48 @@ const Home = () => {
                       </div>
                     ))
                   ) : (
-                    <p className="empty-message">No members yet</p>
+                    <p className="no-members">No members yet</p>
                   )}
                 </div>
               </div>
 
-              {/* Sent Invitations - Show for owners/admins */}
-              {currentUserRole && ['owner', 'admin'].includes(currentUserRole) && sentInvitations.length > 0 && (
+              {/* Pending Requests */}
+              {pendingRequests.length > 0 && (
                 <div className="members-section">
-                  <h3>Pending Invitations ({sentInvitations.length})</h3>
-                  <div className="members-list">
-                    {sentInvitations.map(invitation => (
-                      <div key={invitation.invitation_id} className="member-card invitation-pending-card">
-                        <div className="member-avatar">
-                          {invitation.first_name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="member-info">
-                          <div className="member-name">{invitation.first_name} {invitation.last_name}</div>
-                          <div className="member-username">
-                            Waiting for their response
-                          </div>
-                        </div>
-                        <div className="invitation-status">
-                          <span className="status-badge pending">Pending</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* My Pending Requests - Show for non-owners */}
-              {currentUserRole && !['owner', 'admin'].includes(currentUserRole) && myPendingRequests.length > 0 && (
-                <div className="members-section">
-                  <h3>My Pending Requests ({myPendingRequests.length})</h3>
-                  <div className="members-list">
-                    {myPendingRequests.map(request => (
-                      <div key={request.request_id} className="member-card invitation-pending-card">
-                        <div className="member-avatar">
-                          {request.first_name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="member-info">
-                          <div className="member-name">{request.first_name} {request.last_name}</div>
-                          <div className="member-username">
-                            {request.owner_approved && !request.friend_accepted 
-                              ? 'Owner approved, waiting for friend'
-                              : !request.owner_approved && request.friend_accepted
-                              ? 'Friend accepted, waiting for owner'
-                              : 'Waiting for approvals'}
-                          </div>
-                        </div>
-                        <div className="invitation-status">
-                          <span className="status-badge pending">Pending</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Pending Requests - Only for Owners/Admins */}
-              {currentUserRole && ['owner', 'admin'].includes(currentUserRole) && pendingRequests.length > 0 && (
-                <div className="members-section">
-                  <h3>Member Requests ({pendingRequests.length})</h3>
-                  <div className="members-list">
+                  <h3>Pending Requests ({pendingRequests.length})</h3>
+                  <div className="requests-list">
                     {pendingRequests.map(request => (
-                      <div key={request.request_id} className="member-card request-card">
-                        <div className="member-avatar">
-                          {request.friend_first_name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="member-info">
-                          <div className="member-name">{request.friend_first_name} {request.friend_last_name}</div>
-                          <div className="member-username">
-                            Requested by {request.requester_first_name}
+                      <div key={request.id} className="request-card">
+                        <div className="requester-info">
+                          <div className="requester-avatar">
+                            {request.requester_name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="requester-name">{request.requester_name}</div>
+                            <div className="request-text">
+                              wants to add <strong>{request.friend_name}</strong>
+                            </div>
                           </div>
                         </div>
                         <div className="request-actions">
-                          <button 
-                            onClick={() => handleApproveRequest(request.request_id)}
-                            className="approve-request-btn"
-                            title="Approve request"
+                          <button
+                            onClick={() => handleApproveRequest(request.id)}
+                            className="approve-btn"
+                            title="Approve"
                           >
-                            âœ“
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
                           </button>
-                          <button 
-                            onClick={() => handleRejectRequest(request.request_id)}
-                            className="reject-request-btn"
-                            title="Reject request"
+                          <button
+                            onClick={() => handleRejectRequest(request.id)}
+                            className="reject-btn"
+                            title="Reject"
                           >
-                            âœ•
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <line x1="18" y1="6" x2="6" y2="18"></line>
+                              <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
                           </button>
                         </div>
                       </div>
@@ -1656,36 +1697,55 @@ const Home = () => {
                 </div>
               )}
 
-              {/* Add Members */}
+              {/* Sent Invitations */}
+              {sentInvitations.length > 0 && (
+                <div className="members-section">
+                  <h3>Sent Invitations ({sentInvitations.length})</h3>
+                  <div className="invitations-list">
+                    {sentInvitations.map(invite => (
+                      <div key={invite.id} className="invitation-card">
+                        <div className="invitee-info">
+                          <div className="invitee-avatar">
+                            {invite.friend_name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="invitee-details">
+                            <div className="invitee-name">{invite.friend_name}</div>
+                            <div className="invitation-status">
+                              {invite.owner_approved ? 
+                                (invite.friend_accepted ? 
+                                  <span className="status-accepted">Accepted</span> : 
+                                  <span className="status-pending">Waiting for response</span>
+                                ) :
+                                <span className="status-pending">Waiting for owner approval</span>
+                              }
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Available Friends */}
               {availableFriends.length > 0 && (
                 <div className="members-section">
-                  <h3>
-                    {currentUserRole && ['owner', 'admin'].includes(currentUserRole) 
-                      ? 'Invite Friends' 
-                      : 'Request to Add Friends'}
-                  </h3>
-                  <div className="members-list">
+                  <h3>Add Friends ({availableFriends.length})</h3>
+                  <div className="available-friends-grid">
                     {availableFriends.map(friend => (
-                      <div key={friend.user_id} className="member-card">
-                        <div className="member-avatar">
+                      <div key={friend.user_id} className="available-friend-card">
+                        <div className="friend-avatar-small">
                           {friend.first_name.charAt(0).toUpperCase()}
                         </div>
-                        <div className="member-info">
-                          <div className="member-name">{friend.first_name} {friend.last_name}</div>
-                          <div className="member-username">@{friend.username}</div>
-                        </div>
-                        <button 
-                          onClick={() => currentUserRole && ['owner', 'admin'].includes(currentUserRole) 
-                            ? handleAddMemberToTrip(friend.user_id) 
-                            : handleRequestAddMember(friend.user_id)}
-                          className={currentUserRole && ['owner', 'admin'].includes(currentUserRole) ? "add-member-btn" : "request-add-btn"}
-                          title={currentUserRole && ['owner', 'admin'].includes(currentUserRole) ? "Send invitation" : "Request to add"}
+                        <div className="friend-name-small">{friend.first_name} {friend.last_name}</div>
+                        <button
+                          onClick={() => handleAddMemberToTrip(friend.user_id)}
+                          className="add-friend-btn"
+                          title="Add to trip"
                         >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="8.5" cy="7" r="4"></circle>
-                            <line x1="20" y1="8" x2="20" y2="14"></line>
-                            <line x1="23" y1="11" x2="17" y2="11"></line>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
                           </svg>
                         </button>
                       </div>

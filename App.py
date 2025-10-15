@@ -1081,6 +1081,32 @@ def autocomplete():
         print("Error in autocomplete:", e)
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/autocomplete/places', methods=['GET'])
+def autocomplete_places():
+    """Autocomplete for any place (cities, addresses, landmarks, etc.)"""
+    if not gmaps:
+        return jsonify({"error": "Google Places API is not configured"}), 500
+    
+    query = request.args.get('query', '')
+    if not query:
+        return jsonify([]), 200
+    
+    try:
+        result = gmaps.places_autocomplete(query)
+        suggestions = [
+            {
+                'description': place['description'],
+                'place_id': place['place_id']
+            }
+            for place in result
+        ]
+        return jsonify(suggestions), 200
+    except Exception as e:
+        print("Error in places autocomplete:", e)
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/autocomplete/cities', methods=['GET'])
 def autocomplete_cities():
     """Autocomplete specifically for cities"""
@@ -1833,6 +1859,38 @@ def extract_category_from_types(types):
     print(f"DEBUG: No match found in types {types}, defaulting to Attractions")
     return 'Attractions'
 
+# Endpoint to get basic place details (coordinates, etc.)
+@app.route('/api/place-details', methods=['GET'])
+def get_basic_place_details():
+    """Get basic place details (lat/lng) from place_id"""
+    if not gmaps:
+        return jsonify({"error": "Google Places API is not configured"}), 500
+    
+    place_id = request.args.get('place_id')
+    if not place_id:
+        return jsonify({"error": "place_id is required"}), 400
+    
+    try:
+        details = gmaps.place(place_id=place_id, fields=['geometry'])
+        
+        if details['status'] != 'OK':
+            return jsonify({"error": f"Place not found: {details.get('status')}"}), 404
+        
+        result = details['result']
+        geometry = result.get('geometry', {})
+        location = geometry.get('location', {})
+        
+        return jsonify({
+            "lat": location.get('lat'),
+            "lng": location.get('lng')
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in get_basic_place_details: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 # New endpoint to get place details from Google Places API
 @app.route('/api/place/<place_id>', methods=['GET'])
 def get_place_details(place_id):
@@ -2273,6 +2331,15 @@ def get_user_trips(user_id):
         cursor.execute(query, (user_id,))
         trips = cursor.fetchall()
         
+        # Convert date objects to YYYY-MM-DD strings to avoid timezone issues
+        for trip in trips:
+            if trip.get('start_date'):
+                trip['start_date'] = trip['start_date'].strftime('%Y-%m-%d') if hasattr(trip['start_date'], 'strftime') else str(trip['start_date'])
+            if trip.get('end_date'):
+                trip['end_date'] = trip['end_date'].strftime('%Y-%m-%d') if hasattr(trip['end_date'], 'strftime') else str(trip['end_date'])
+            if trip.get('created_at'):
+                trip['created_at'] = trip['created_at'].isoformat() if hasattr(trip['created_at'], 'isoformat') else str(trip['created_at'])
+        
         return jsonify({"trips": trips})
         
     except Exception as e:
@@ -2339,6 +2406,24 @@ def create_trip():
         for member_id in member_ids:
             cursor.execute(chat_participant_query, (chat_id, member_id))
         
+        # Add trip destinations if provided
+        destinations = data.get('destinations', [])
+        if destinations:
+            dest_query = """
+            INSERT INTO trip_destinations (trip_id, destination, place_id, lat, lng, start_date, end_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            for dest in destinations:
+                cursor.execute(dest_query, (
+                    trip_id,
+                    dest.get('destination'),
+                    dest.get('place_id'),
+                    dest.get('lat'),
+                    dest.get('lng'),
+                    dest.get('start_date'),
+                    dest.get('end_date')
+                ))
+        
         conn.commit()
         
         return jsonify({
@@ -2355,6 +2440,227 @@ def create_trip():
         if conn:
             conn.rollback()
         return jsonify({"error": f"Database error: {str(e)}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/trips/<int:trip_id>', methods=['PUT'])
+def update_trip(trip_id):
+    """Update trip basic information (name, description)"""
+    data = request.json
+    user_id = data.get('user_id')
+    trip_name = data.get('trip_name')
+    description = data.get('description')
+    
+    if not user_id:
+        return jsonify({"error": "Missing user_id"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Verify user is owner or admin
+        cursor.execute("""
+            SELECT role FROM trip_participants 
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, user_id))
+        participant = cursor.fetchone()
+        
+        if not participant or participant['role'] not in ['owner', 'admin']:
+            return jsonify({"error": "Only trip owners/admins can edit trip details"}), 403
+        
+        # Update trip
+        update_query = "UPDATE trips SET "
+        params = []
+        if trip_name is not None:
+            update_query += "trip_name = %s, "
+            params.append(trip_name)
+        if description is not None:
+            update_query += "description = %s, "
+            params.append(description)
+        
+        update_query = update_query.rstrip(', ') + " WHERE trip_id = %s"
+        params.append(trip_id)
+        
+        cursor.execute(update_query, params)
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Trip updated successfully"}), 200
+        
+    except Exception as e:
+        print(f"Error updating trip: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/trips/<int:trip_id>/dates', methods=['PUT'])
+def update_trip_dates(trip_id):
+    """Update trip dates and remap planner items"""
+    data = request.json
+    user_id = data.get('user_id')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    
+    if not all([user_id, start_date, end_date]):
+        return jsonify({"error": "Missing required fields"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Verify user is owner or admin
+        cursor.execute("""
+            SELECT role FROM trip_participants 
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, user_id))
+        participant = cursor.fetchone()
+        
+        if not participant or participant['role'] not in ['owner', 'admin']:
+            return jsonify({"error": "Only trip owners/admins can edit trip dates"}), 403
+        
+        # Get old dates
+        cursor.execute("SELECT start_date, end_date FROM trips WHERE trip_id = %s", (trip_id,))
+        old_trip = cursor.fetchone()
+        old_start = old_trip['start_date']
+        old_end = old_trip['end_date']
+        
+        # Update trip dates
+        cursor.execute("""
+            UPDATE trips 
+            SET start_date = %s, end_date = %s
+            WHERE trip_id = %s
+        """, (start_date, end_date, trip_id))
+        
+        # Remap planner items if dates changed
+        items_remapped = 0
+        if old_start != start_date or old_end != end_date:
+            # Get all planner items for this trip
+            cursor.execute("""
+                SELECT planner_id, start_date 
+                FROM planner 
+                WHERE trip_id = %s
+                ORDER BY start_date
+            """, (trip_id,))
+            items = cursor.fetchall()
+            
+            if items:
+                # Calculate date mappings
+                from datetime import datetime, timedelta
+                old_start_dt = datetime.strptime(str(old_start), '%Y-%m-%d')
+                new_start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                
+                for item in items:
+                    if item['start_date']:
+                        item_date = datetime.strptime(str(item['start_date']), '%Y-%m-%d')
+                        days_from_start = (item_date - old_start_dt).days
+                        new_item_date = new_start_dt + timedelta(days=days_from_start)
+                        new_date_str = new_item_date.strftime('%Y-%m-%d')
+                        
+                        cursor.execute("""
+                            UPDATE planner 
+                            SET start_date = %s, end_date = %s
+                            WHERE planner_id = %s
+                        """, (new_date_str, new_date_str, item['planner_id']))
+                        items_remapped += 1
+        
+        conn.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Dates updated successfully",
+            "items_remapped": items_remapped
+        }), 200
+        
+    except Exception as e:
+        print(f"Error updating trip dates: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/trips/<int:trip_id>/destinations', methods=['GET'])
+def get_trip_destinations(trip_id):
+    """Get all destinations for a trip"""
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT destination_id, destination, place_id, lat, lng, start_date, end_date
+            FROM trip_destinations
+            WHERE trip_id = %s
+            ORDER BY start_date
+        """, (trip_id,))
+        destinations = cursor.fetchall()
+        
+        # Convert dates to YYYY-MM-DD format
+        for dest in destinations:
+            if dest.get('start_date'):
+                dest['start_date'] = dest['start_date'].strftime('%Y-%m-%d') if hasattr(dest['start_date'], 'strftime') else str(dest['start_date'])
+            if dest.get('end_date'):
+                dest['end_date'] = dest['end_date'].strftime('%Y-%m-%d') if hasattr(dest['end_date'], 'strftime') else str(dest['end_date'])
+        
+        return jsonify({"destinations": destinations}), 200
+        
+    except Exception as e:
+        print(f"Error fetching trip destinations: {e}")
+        return jsonify({"error": "Database error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/trips/<int:trip_id>/destinations/<int:destination_id>', methods=['PUT'])
+def update_destination_dates(trip_id, destination_id):
+    """Update destination dates"""
+    data = request.json
+    user_id = data.get('user_id')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    
+    if not user_id:
+        return jsonify({"error": "Missing user_id"}), 400
+    
+    conn = None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Verify user is owner or admin
+        cursor.execute("""
+            SELECT role FROM trip_participants 
+            WHERE trip_id = %s AND user_id = %s
+        """, (trip_id, user_id))
+        participant = cursor.fetchone()
+        
+        if not participant or participant['role'] not in ['owner', 'admin']:
+            return jsonify({"error": "Only trip owners/admins can edit destinations"}), 403
+        
+        # Update destination dates
+        cursor.execute("""
+            UPDATE trip_destinations 
+            SET start_date = %s, end_date = %s
+            WHERE destination_id = %s AND trip_id = %s
+        """, (start_date, end_date, destination_id, trip_id))
+        
+        conn.commit()
+        
+        return jsonify({"success": True, "message": "Destination dates updated"}), 200
+        
+    except Exception as e:
+        print(f"Error updating destination: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({"error": "Database error"}), 500
     finally:
         if conn:
             conn.close()

@@ -10,6 +10,86 @@
   margin: 0 auto;
 }
 
+/* Destination Header - Clean & Sticky */
+.destination-header {
+  position: -webkit-sticky;
+  position: sticky;
+  top: 80px;
+  z-index: 99;
+  margin: 2rem 0 1.5rem 0;
+  padding: 0 0 0.5rem 0;
+}
+
+/* Remove top margin from destination headers except the first one */
+.destination-group:not(:first-child) .destination-header {
+  margin-top: 0;
+}
+
+/* Hide day headers when sticky destination header is active */
+.day-header.hidden-by-sticky {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+/* Ensure buttons don't have drop shadows */
+.add-custom-btn,
+.search-places-btn {
+  box-shadow: none !important;
+}
+
+.destination-header-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 2rem;
+  background: rgba(24, 24, 27, 0.98);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid #404040;
+  border-radius: 0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  transition: all 0.3s ease;
+  width: 100%;
+  margin: 0;
+  /* Make the content span full width when sticky */
+  position: relative;
+}
+
+.destination-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: rgba(136, 189, 242, 0.15);
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.destination-icon-wrapper svg {
+  color: #88BDF2;
+}
+
+.destination-info {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.destination-header .destination-name {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.destination-header .destination-dates {
+  font-size: 0.8125rem;
+  color: #a1a1aa;
+  font-weight: 500;
+}
+
 /* Header */
 .planner-header {
   margin-bottom: 2.5rem;
@@ -19,6 +99,29 @@
   justify-content: flex-start;
   align-items: center;
   gap: 20px;
+}
+
+/* Edit Trip Button in Planner */
+.edit-trip-planner-btn {
+  background: transparent;
+  border: 1px solid #3f3f46;
+  color: #a1a1aa;
+  padding: 0.5rem 0.875rem;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.edit-trip-planner-btn:hover {
+  background: #27272a;
+  border-color: #52525b;
+  color: #e4e4e7;
 }
 
 
@@ -160,11 +263,39 @@
 }
 
 /* Planner Days - Vertical Stack */
-.planner-days {
+.planner-day-card, .planner-days {
   display: flex;
   flex-direction: column;
+}
+
+.planner-days {
   gap: 2rem;
-  margin-top: 1.5rem;
+  margin-top: -2.5rem;
+}
+
+/* Destination Group - Container for sticky header and its days */
+.destination-group {
+  position: relative;
+  /* Ensure the sticky header can span the entire group */
+  overflow: visible;
+}
+
+.destination-group + .destination-group {
+  margin-top: 1rem;
+}
+
+/* Spacing between day cards within a destination */
+.destination-group .day-wrapper {
+  margin-bottom: 1rem;
+}
+
+.destination-group .day-wrapper:last-child {
+  margin-bottom: 0;
+}
+
+/* Ensure recommendations section is part of the destination group for sticky behavior */
+.destination-group .recommendations-section {
+  margin-top: 2rem;
 }
 
 /* Day Card */
@@ -173,10 +304,9 @@
   border: 1px solid #3f3f46;
   border-radius: 12px;
   padding: 1.75rem;
-  display: flex;
-  flex-direction: column;
   transition: all 0.2s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  margin-bottom: 0;
 }
 
 .planner-day-card:hover {
@@ -228,13 +358,14 @@
   border-color: #88BDF2;
   color: #000000;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(136, 189, 242, 0.3);
+  box-shadow: none;
 }
 
 .search-places-btn:hover {
   background: #3f3f46;
   border-color: #52525b;
   transform: translateY(-1px);
+  box-shadow: none;
 }
 
 /* Day Items */
@@ -267,27 +398,49 @@
 }
 
 /* Planner Item */
-.planner-item {
+/* Unified container for all items in a day */
+.day-items-container {
   background: #27272a;
   border: 1px solid #3f3f46;
   border-radius: 8px;
+  overflow: visible;
+  position: relative;
+  margin-top: 1rem;
+}
+
+/* Individual planner item - minimal styling */
+.planner-item {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #3f3f46;
   padding: 1rem;
   display: flex;
   gap: 0.875rem;
   cursor: grab;
   transition: all 0.2s ease;
   position: relative;
-  overflow: hidden;
+}
+
+/* Remove border from last item */
+.day-items-container > div:last-child .planner-item {
+  border-bottom: none;
+}
+
+/* Hover effect */
+.planner-item:hover {
+  background: rgba(82, 82, 91, 0.15);
 }
 
 /* Item Photo */
 .item-photo {
-  width: 100px;
-  align-self: stretch;
+  width: 90px;
+  height: 90px;
   border-radius: 6px;
   overflow: hidden;
   flex-shrink: 0;
   background: #1f1f23;
+  align-self: flex-start;
+  margin-top: 0.5rem;
 }
 
 .item-photo img {
@@ -313,15 +466,8 @@
   opacity: 1;
 }
 
-.planner-item:hover {
-  border-color: #52525b;
-  background: #2a2a2e;
-  transform: translateX(4px);
-}
-
 .planner-item:active {
   cursor: grabbing;
-  transform: scale(0.98);
 }
 
 .item-drag-handle {
@@ -356,16 +502,9 @@
 
 .item-header {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.75rem;
-}
-
-.item-title-section {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  margin-top: 0.5rem;
 }
 
 .item-header h4 {
@@ -375,9 +514,10 @@
   color: #ffffff;
   line-height: 1.4;
   letter-spacing: -0.025em;
+  flex-shrink: 0;
 }
 
-.item-note-subheading {
+.item-note-inline {
   padding: 0.25rem 0.5rem;
   background: transparent;
   border: 1px solid transparent;
@@ -387,21 +527,22 @@
   font-weight: 400;
   font-style: italic;
   transition: all 0.2s ease;
-  width: fit-content;
-  max-width: 300px;
+  flex: 1;
+  outline: none;
+  min-width: 120px;
 }
 
-.item-note-subheading::placeholder {
+.item-note-inline::placeholder {
   color: #6b7280;
   font-style: italic;
 }
 
-.item-note-subheading:hover {
+.item-note-inline:hover {
   border-color: rgba(136, 189, 242, 0.3);
   background: rgba(136, 189, 242, 0.05);
 }
 
-.item-note-subheading:focus {
+.item-note-inline:focus {
   outline: none;
   border-color: #88BDF2;
   background: rgba(136, 189, 242, 0.08);
@@ -477,63 +618,41 @@
   font-weight: 600;
 }
 
-/* Travel Peek Box - appears above items */
-.item-wrapper {
+/* Distance info bar - clean style like reference */
+.distance-info-bar {
+  position: absolute;
+  top: -0.75rem;
+  left: 1rem;
   display: flex;
-  flex-direction: column;
-  gap: 0;
-  cursor: grab;
-  transition: opacity 0.2s ease;
-  user-select: none;
-}
-
-.item-wrapper:active {
-  cursor: grabbing;
-}
-
-/* Lock horizontal movement visually during drag */
-.item-wrapper[draggable="true"] {
-  touch-action: pan-y;
-}
-
-.travel-peek-box {
-  display: flex;
-  justify-content: flex-start;
   align-items: center;
-  margin-bottom: -0.5rem;
-  z-index: 1;
-  position: relative;
-  padding-left: 1rem;
-}
-
-.travel-peek-content {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 0.5rem 0.875rem;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
   background: #27272a;
   border: 1px solid #3f3f46;
-  border-radius: 6px;
-  font-size: 0.8125rem;
-  font-weight: 400;
+  border-radius: 4px;
+  font-size: 0.75rem;
   color: #a1a1aa;
-  transition: background 0.2s ease;
+  z-index: 10;
+  font-weight: 400;
 }
 
-.travel-peek-content:hover {
-  background: #2a2a2e;
-}
-
-.travel-car-icon {
-  color: #ffffff;
+.distance-info-bar .distance-car-icon {
+  color: #a1a1aa;
+  opacity: 0.8;
   flex-shrink: 0;
 }
 
-.travel-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.distance-info-bar .distance-text {
+  color: #e4e4e7;
+  font-weight: 400;
 }
+
+.distance-info-bar .distance-dropdown-icon {
+  color: #a1a1aa;
+  opacity: 0.6;
+  margin-left: 0.25rem;
+}
+
 
 /* Modal Styles */
 .modal-overlay {

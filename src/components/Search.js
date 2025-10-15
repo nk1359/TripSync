@@ -52,6 +52,8 @@ const Search = () => {
   const [tripForm, setTripForm] = useState({
     tripName: '',
     description: '',
+    startDate: '',
+    endDate: '',
     memberIds: []
   });
   const [tripFriends, setTripFriends] = useState([]);
@@ -60,8 +62,10 @@ const Search = () => {
   const [showAllFriends, setShowAllFriends] = useState(false);
   const [tripLocations, setTripLocations] = useState([]);
   const [currentLocation, setCurrentLocation] = useState({
-    city: '',
-    state: '',
+    destination: '',
+    place_id: '',
+    lat: null,
+    lng: null,
     startDate: '',
     endDate: ''
   });
@@ -91,7 +95,7 @@ const Search = () => {
     }
   }, [user]);
 
-  // Check for URL search parameters on mount
+  // Check for URL search parameters on mount and when URL changes
   useEffect(() => {
     const queryParam = searchParams.get('q');
     
@@ -104,7 +108,7 @@ const Search = () => {
     }
     
     // If logged in and URL params exist, perform search
-    if (queryParam && viewMode === 'search') {
+    if (queryParam) {
       // Parse the query format (e.g., "hotels-in-syracuse" or "restaurants-in-new-york-ny")
       const parts = queryParam.split('-in-');
       if (parts.length >= 2) {
@@ -141,7 +145,7 @@ const Search = () => {
         performSearchFromURL(placeType, city, state);
       }
     }
-  }, [user]);
+  }, [user, searchParams]);
 
   const fetchTrips = async () => {
     if (!user) return;
@@ -155,11 +159,18 @@ const Search = () => {
     }
   };
 
+  // Helper to parse date string without timezone conversion
+  const parseDateString = (dateStr) => {
+    if (!dateStr) return null;
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
   const getTripDays = (trip) => {
     if (!trip || !trip.start_date || !trip.end_date) return [];
     
-    const start = new Date(trip.start_date);
-    const end = new Date(trip.end_date);
+    const start = parseDateString(trip.start_date);
+    const end = parseDateString(trip.end_date);
     const days = [];
     
     for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
@@ -208,15 +219,15 @@ const Search = () => {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/autocomplete/cities?query=${encodeURIComponent(query)}`);
+      const response = await fetch(`${API_URL}/api/autocomplete/places?query=${encodeURIComponent(query)}`);
       const data = await response.json();
       
       const formatted = (data || []).map(item => {
         const parts = item.description.split(',').map(p => p.trim());
         return {
           place_id: item.place_id,
-          city: parts[0],
-          state: parts.length > 1 ? parts[parts.length - 2] : '',
+          main_text: parts[0],
+          secondary_text: parts.slice(1).join(', '),
           description: item.description
         };
       });
@@ -229,8 +240,8 @@ const Search = () => {
   };
 
   const handleAddLocation = () => {
-    if (!currentLocation.city || !currentLocation.startDate) {
-      showToast('Please enter city and start date', 'info');
+    if (!currentLocation.destination || !currentLocation.startDate) {
+      showToast('Please enter destination and start date', 'info');
       return;
     }
 
@@ -243,7 +254,7 @@ const Search = () => {
       setTripLocations([...tripLocations, { ...currentLocation, id: Date.now() }]);
     }
     
-    setCurrentLocation({ city: '', state: '', startDate: '', endDate: '' });
+    setCurrentLocation({ destination: '', place_id: '', lat: null, lng: null, startDate: '', endDate: '' });
   };
 
   const handleEditLocation = (locationId) => {
@@ -258,17 +269,34 @@ const Search = () => {
     setTripLocations(tripLocations.filter(loc => loc.id !== locationId));
     if (editingLocationId === locationId) {
       setEditingLocationId(null);
-      setCurrentLocation({ city: '', state: '', startDate: '', endDate: '' });
+      setCurrentLocation({ destination: '', place_id: '', lat: null, lng: null, startDate: '', endDate: '' });
     }
   };
 
-  const handleLocationSelect = (location) => {
-    setCurrentLocation(prev => ({
-      ...prev,
-      city: location.city,
-      state: location.state
-    }));
-    setShowLocationSuggestions(false);
+  const handleLocationSelect = async (location) => {
+    try {
+      // Fetch place details to get coordinates
+      const response = await fetch(`${API_URL}/api/place-details?place_id=${location.place_id}`);
+      const data = await response.json();
+      
+      setCurrentLocation(prev => ({
+        ...prev,
+        destination: location.description,
+        place_id: location.place_id,
+        lat: data.lat,
+        lng: data.lng
+      }));
+      setShowLocationSuggestions(false);
+    } catch (error) {
+      console.error('Error fetching place details:', error);
+      // Fallback: just set the text without coordinates
+      setCurrentLocation(prev => ({
+        ...prev,
+        destination: location.description,
+        place_id: location.place_id
+      }));
+      setShowLocationSuggestions(false);
+    }
   };
 
   const handleCreateTrip = async () => {
@@ -277,21 +305,23 @@ const Search = () => {
       return;
     }
 
+    // Auto-add current location if it has data
     let finalLocations = [...tripLocations];
-    if (currentLocation.city && currentLocation.state && currentLocation.startDate) {
+    if (currentLocation.destination && currentLocation.startDate) {
       finalLocations.push({ ...currentLocation, id: Date.now() });
     }
 
     if (finalLocations.length === 0) {
-      showToast('Please add at least one location', 'info');
+      showToast('Please add at least one destination', 'info');
       return;
     }
 
+    // Calculate trip dates from destinations
     const startDates = finalLocations.map(loc => loc.startDate).filter(date => date);
-    const endDates = finalLocations.map(loc => loc.endDate).filter(date => date);
+    const endDates = finalLocations.map(loc => loc.endDate || loc.startDate).filter(date => date);
     
-    if (startDates.length === 0 || endDates.length === 0) {
-      showToast('Please ensure all locations have valid dates', 'info');
+    if (startDates.length === 0) {
+      showToast('Please ensure all destinations have dates', 'info');
       return;
     }
 
@@ -308,7 +338,15 @@ const Search = () => {
           start_date: tripStartDate.toISOString().split('T')[0],
           end_date: tripEndDate.toISOString().split('T')[0],
           created_by: user.user_id,
-          member_ids: []
+          member_ids: [],
+          destinations: finalLocations.map(loc => ({
+            destination: loc.destination,
+            place_id: loc.place_id,
+            lat: loc.lat,
+            lng: loc.lng,
+            start_date: loc.startDate,
+            end_date: loc.endDate || loc.startDate
+          }))
         })
       });
 
@@ -342,8 +380,9 @@ const Search = () => {
         
         // Close trip creation modal and refresh trips
         setShowTripModal(false);
-        setTripForm({ tripName: '', description: '', memberIds: [] });
+        setTripForm({ tripName: '', description: '', startDate: '', endDate: '', memberIds: [] });
         setTripLocations([]);
+        setCurrentLocation({ destination: '', place_id: '', lat: null, lng: null, startDate: '', endDate: '' });
         setSelectedFriends([]);
         setFriendSearchQuery('');
         setShowAllFriends(false);
@@ -388,7 +427,9 @@ const Search = () => {
       cost: null,
       notes: '',
       created_by: user.user_id,
-      google_place_id: selectedPlaceForModal.place_id
+      google_place_id: selectedPlaceForModal.place_id,
+      latitude: selectedPlaceForModal.lat,
+      longitude: selectedPlaceForModal.lng
     };
     
     try {
@@ -408,14 +449,8 @@ const Search = () => {
         setShowTripSelector(false);
         setSelectedPlaceForModal(null);
         
-        // Navigate back to planner if from planner
-        if (plannerContext) {
-          sessionStorage.removeItem('plannerContext');
-          setPlannerContext(null);
-          navigate('/planner');
-        } else {
-          showToast(`Added ${selectedPlaceForModal.place_name} to your trip!`, 'success');
-        }
+        // Show success message - user can manually navigate back when ready
+        showToast(`Added ${selectedPlaceForModal.place_name} to your trip!`, 'success');
       } else {
         showToast(data.error || 'Failed to add to planner', 'error');
       }
@@ -1254,7 +1289,7 @@ const Search = () => {
                       >
                         <option value="">Choose a day...</option>
                         {getTripDays(selectedTripForPlanner).map(day => {
-                          const date = new Date(day);
+                          const date = parseDateString(day);
                           return (
                             <option key={day} value={day}>
                               {date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
@@ -1393,130 +1428,117 @@ const Search = () => {
                 </div>
               )}
 
-              {/* Add Destinations Section */}
+              {/* Destinations & Dates */}
               <div className="trip-form-section">
-                <label>Add Destinations</label>
-                
-                <div className="add-destination-container">
+                <label>Destinations & Dates *</label>
+                <div className="destinations-container">
+                  {/* Destination Input Box */}
                   <div className="destination-input-box">
-                    <div className="location-input-row">
-                      <div className="location-input-wrapper">
-                        <input
-                          type="text"
-                          placeholder="City"
-                          value={currentLocation.city}
-                          onChange={(e) => {
-                            setCurrentLocation({...currentLocation, city: e.target.value});
-                            fetchLocationSuggestions(e.target.value);
-                          }}
-                          onFocus={() => currentLocation.city.length >= 2 && setShowLocationSuggestions(true)}
-                          onBlur={() => setTimeout(() => setShowLocationSuggestions(false), 200)}
-                          className="trip-input small"
-                        />
-                        {showLocationSuggestions && locationSuggestions.length > 0 && (
-                          <div className="autocomplete-dropdown modern-dropdown">
-                            {locationSuggestions.map((location) => (
-                              <div
-                                key={location.place_id}
-                                className="autocomplete-item modern-item"
-                                onClick={() => handleLocationSelect(location)}
-                              >
-                                <svg className="item-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <rect x="3" y="3" width="7" height="7"></rect>
-                                  <rect x="14" y="3" width="7" height="7"></rect>
-                                  <rect x="14" y="14" width="7" height="7"></rect>
-                                  <rect x="3" y="14" width="7" height="7"></rect>
-                                </svg>
-                                <div className="item-content">
-                                  <div className="autocomplete-main">{location.city}</div>
-                                  <div className="autocomplete-secondary">{location.state}</div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
+                    <div className="location-input-wrapper">
                       <input
                         type="text"
-                        placeholder="State"
-                        value={currentLocation.state}
-                        onChange={(e) => setCurrentLocation({...currentLocation, state: e.target.value})}
-                        className="trip-input small"
+                        placeholder="Search destination (e.g., Paris, France or 123 Main St)"
+                        value={currentLocation.destination}
+                        onChange={(e) => {
+                          setCurrentLocation(prev => ({...prev, destination: e.target.value}));
+                          if (e.target.value.length >= 2) {
+                            fetchLocationSuggestions(e.target.value);
+                          }
+                        }}
+                        onFocus={() => currentLocation.destination?.length >= 2 && setShowLocationSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowLocationSuggestions(false), 200)}
+                        className="trip-input destination-search"
                       />
+                      {showLocationSuggestions && locationSuggestions.length > 0 && (
+                        <div className="autocomplete-dropdown modern-dropdown">
+                          {locationSuggestions.map((location) => (
+                            <div
+                              key={location.place_id}
+                              className="autocomplete-item modern-item"
+                              onClick={() => handleLocationSelect(location)}
+                            >
+                              <svg className="item-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                                <circle cx="12" cy="10" r="3"></circle>
+                              </svg>
+                              <div className="item-content">
+                                <div className="autocomplete-main">{location.main_text}</div>
+                                <div className="autocomplete-secondary">{location.secondary_text}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     
-                    {/* Date Range Picker */}
+                    {/* Date Range for this destination */}
                     <DateRangePicker
                       startDate={currentLocation.startDate}
                       endDate={currentLocation.endDate}
-                      onStartDateChange={(date) => {
-                        setCurrentLocation((prev) => ({...prev, startDate: date}));
-                      }}
-                      onEndDateChange={(date) => {
-                        setCurrentLocation((prev) => ({...prev, endDate: date}));
-                      }}
+                      onStartDateChange={(date) => setCurrentLocation(prev => ({...prev, startDate: date}))}
+                      onEndDateChange={(date) => setCurrentLocation(prev => ({...prev, endDate: date}))}
+                      label="Dates for this destination"
                     />
+                    
+                    {/* Add/Update Button */}
+                    <button
+                      type="button"
+                      onClick={handleAddLocation}
+                      className={`add-destination-btn ${editingLocationId ? 'update-mode' : ''}`}
+                      title={editingLocationId ? "Update destination" : "Add destination"}
+                    >
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        {editingLocationId ? (
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        ) : (
+                          <>
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                          </>
+                        )}
+                      </svg>
+                    </button>
                   </div>
-                  
-                  <button
-                    type="button"
-                    onClick={handleAddLocation}
-                    className={`circular-add-btn ${editingLocationId ? 'update-mode' : ''}`}
-                    aria-label={editingLocationId ? "Update destination" : "Add destination"}
-                    title={editingLocationId ? "Update destination" : tripLocations.length > 0 ? "Add another destination" : "Add destination"}
-                  >
-                    {editingLocationId ? (
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                      </svg>
-                    ) : (
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <line x1="12" y1="5" x2="12" y2="19"></line>
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                      </svg>
-                    )}
-                  </button>
-                </div>
 
-                {/* Added Locations List */}
-                {tripLocations.length > 0 && (
-                  <div className="added-locations">
-                    {tripLocations.map(location => (
-                      <div key={location.id} className={`location-chip ${editingLocationId === location.id ? 'editing' : ''}`}>
-                        <div className="location-chip-content">
-                          <span className="location-name">{location.city}, {location.state}</span>
-                          <span className="location-dates">
-                            {new Date(location.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            {location.endDate && ` - ${new Date(location.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
-                          </span>
+                  {/* Added Destinations List */}
+                  {tripLocations.length > 0 && (
+                    <div className="added-destinations">
+                      {tripLocations.map(location => (
+                        <div key={location.id} className={`destination-chip ${editingLocationId === location.id ? 'editing' : ''}`}>
+                          <div className="destination-chip-content">
+                            <div className="destination-name">{location.destination}</div>
+                            <div className="destination-dates">
+                              {location.startDate && parseDateString(location.startDate)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {location.endDate && ` - ${parseDateString(location.endDate)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
+                            </div>
+                          </div>
+                          <div className="destination-chip-actions">
+                            <button
+                              onClick={() => handleEditLocation(location.id)}
+                              className="edit-destination-btn"
+                              title="Edit destination"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleRemoveLocation(location.id)}
+                              className="remove-destination-btn"
+                              title="Remove destination"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                              </svg>
+                            </button>
+                          </div>
                         </div>
-                        <div className="location-chip-actions">
-                          <button
-                            onClick={() => handleEditLocation(location.id)}
-                            className="edit-location-btn"
-                            aria-label="Edit destination"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => handleRemoveLocation(location.id)}
-                            className="remove-location-btn"
-                            aria-label="Remove destination"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <line x1="18" y1="6" x2="6" y2="18"></line>
-                              <line x1="6" y1="6" x2="18" y2="18"></line>
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Action Buttons */}

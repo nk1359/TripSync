@@ -5,7 +5,7 @@ import { useToast } from './ToastContext';
 import Layout from './Layout';
 import AddToCalendarModal from './AddToCalendarModal';
 import DateRangePicker from './DateRangePicker';
-import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
+import { FaSearch, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import './styles/Home.css';
 import API_URL from '../config';
 

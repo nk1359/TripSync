@@ -16,8 +16,11 @@
   position: sticky;
   top: 80px;
   z-index: 99;
-  margin: 2rem 0 1.5rem 0;
-  padding: 0 0 0.5rem 0;
+  margin-top: 8px;
+  margin-bottom: 2px;
+  margin-left: 0;
+  margin-right: 0;
+  padding: 0 0 4px 0;
 }
 
 /* Remove top margin from destination headers except the first one */
@@ -286,7 +289,7 @@
 
 /* Spacing between day cards within a destination */
 .destination-group .day-wrapper {
-  margin-bottom: 1rem;
+  margin-bottom: 4px;
 }
 
 .destination-group .day-wrapper:last-child {
@@ -1136,7 +1139,7 @@
 /* Responsive */
 @media (max-width: 768px) {
   .planner-page {
-    padding: 1.5rem 1rem;
+    padding: 1.5rem 0rem;
   }
 
   .planner-header {
@@ -1149,6 +1152,169 @@
     grid-template-columns: 1fr;
   }
 
+  .planner-day-card {
+    padding: 0.75rem 5px;
+  }
+
+  /* Mobile: Two-row planner header */
+  .mobile-planner-header {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    padding: 0.5rem 0.75rem !important;
+  }
+
+  /* Row 1: Trip selector + Edit button */
+  .mobile-header-row-1 {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.5rem !important;
+    width: 100% !important;
+  }
+
+  .mobile-trip-selector {
+    flex: 1 !important;
+    min-width: 0 !important;
+    max-width: 65% !important;
+  }
+
+  .mobile-trip-selector .dropdown-trigger {
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.9rem !important;
+  }
+
+  .mobile-trip-selector .dropdown-trigger span {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .mobile-edit-btn {
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.875rem !important;
+    gap: 0.4rem !important;
+    flex-shrink: 0 !important;
+  }
+
+  .mobile-edit-btn svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  /* Row 2: Members list + Manage button */
+  .mobile-header-row-2 {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    width: 100% !important;
+  }
+
+  .mobile-members-display {
+    display: flex !important;
+    flex-shrink: 0 !important;
+    margin: 0 !important;
+    width: auto !important;
+    justify-content: center !important;
+    align-items: center !important;
+  }
+
+  .mobile-members-display .member-avatars {
+    gap: -6px !important;
+  }
+
+  .mobile-members-display .member-avatar {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 0.7rem !important;
+    margin-left: -6px !important;
+    border: 2px solid #18181b !important;
+  }
+
+  .mobile-members-display .member-avatar:first-child {
+    margin-left: 0 !important;
+  }
+
+  /* Mobile: Manage button styled as avatar */
+  .mobile-manage-btn-avatar {
+    width: 28px !important;
+    height: 28px !important;
+    border-radius: 50% !important;
+    background: #27272a !important;
+    border: 2px solid #18181b !important;
+    color: #a1a1aa !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    margin-left: -6px !important;
+  }
+
+  .mobile-manage-btn-avatar svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  .mobile-manage-btn-avatar:active {
+    background: #3f3f46 !important;
+    color: #ffffff !important;
+  }
+
+  /* Mobile: Make only destination header sticky */
+  .destination-header {
+    position: -webkit-sticky !important;
+    position: sticky !important;
+    top: 56px !important; /* Stick to mobile top navbar */
+    z-index: 99 !important;
+  }
+
+  .destination-header-content {
+    padding: 0.75rem 0.75rem !important;
+  }
+
+  /* Mobile: Center day header */
+  .day-header {
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 0.75rem !important;
+    text-align: center !important;
+    position: static !important; /* Not sticky on mobile */
+    margin-bottom: 0 !important;
+  }
+
+  .mobile-day-title {
+    font-size: 1rem !important;
+    margin: 0 !important;
+    line-height: 1.5 !important;
+  }
+
+  .mobile-search-btn {
+    width: 100% !important;
+    max-width: 300px !important;
+    justify-content: center !important;
+  }
+
+  /* Mobile: Stack name and address vertically */
+  .item-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 0.25rem !important;
+  }
+
+  .item-header h4 {
+    margin-bottom: 0.25rem !important;
+  }
+
+  .item-header .item-location {
+    margin-top: 0 !important;
+    font-size: 0.8rem !important;
+    color: #a1a1aa !important;
+  }
+
   .item-photo {
     width: 80px;
     height: 80px;
@@ -1158,9 +1324,22 @@
     grid-template-columns: 1fr;
   }
 
+  /* Mobile: Reduce modal padding but keep normal size */
   .modal-content {
-    padding: 1.25rem;
-    width: 95%;
+    padding: 0 !important;
+    width: 95% !important;
+  }
+
+  .modal-header {
+    padding: 1rem 10px !important;
+  }
+
+  .modal-body {
+    padding: 1rem 10px !important;
+  }
+
+  .modal-footer {
+    padding: 1rem 10px !important;
   }
 
   .time-inputs {
@@ -1173,6 +1352,88 @@
 
   .item-note-subheading {
     max-width: 100%;
+  }
+
+  /* Mobile: Distance info bar styling */
+  .distance-info-bar {
+    max-width: 85% !important;
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.65rem !important;
+  }
+
+  .distance-info-bar .distance-car-icon {
+    width: 11px !important;
+    height: 11px !important;
+  }
+
+  .distance-info-bar .distance-text {
+    font-size: 0.65rem !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    max-width: 100% !important;
+  }
+
+  /* Mobile: Recommendations section spacing */
+  .recommendations-section {
+    margin-top: 4px !important;
+    padding-top: 8px !important;
+  }
+
+  /* Mobile: Day items container spacing */
+  .day-items-container {
+    margin-top: 4px !important;
+  }
+
+  /* Mobile: View All card styling - Small square button */
+  .view-all-card {
+    background: #27272a !important;
+    border: 1px solid #3f3f46 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    min-height: 100px !important;
+    max-height: 100px !important;
+    height: 100px !important;
+    min-width: 100px !important;
+    max-width: 100px !important;
+    width: 100px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 8px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .view-all-card:hover,
+  .view-all-card:active {
+    background: #3f3f46 !important;
+    border-color: #6366f1 !important;
+  }
+
+  .view-all-content {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.5rem !important;
+  }
+
+  .view-all-icon {
+    font-size: 1.5rem !important;
+    color: #a1a1aa !important;
+  }
+
+  .view-all-text {
+    font-size: 0.7rem !important;
+    font-weight: 600 !important;
+    color: #ffffff !important;
+    margin: 0 !important;
+    line-height: 1.2 !important;
+  }
+
+  .view-all-card:hover .view-all-icon,
+  .view-all-card:active .view-all-icon {
+    color: #6366f1 !important;
   }
 }
 
@@ -1969,18 +2230,186 @@
     min-width: 100px;
   }
 
-  .modal-recommendations-grid {
-    grid-template-columns: 1fr;
+  /* Mobile: Full-screen recommendations modal */
+  .recommendations-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    border-radius: 0 !important;
+  }
+
+  .recommendations-modal .modal-header {
+    padding: 1rem 10px !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 100 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+  }
+
+  .recommendations-modal .modal-header h2 {
+    font-size: 1.125rem !important;
+    margin: 0 !important;
+    flex: 0 0 auto !important;
+  }
+
+  .recommendations-modal .close-modal-btn {
+    position: static !important;
+    margin: 0 !important;
+    padding: 0.5rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: transparent !important;
+    border: 1px solid #3f3f46 !important;
+    border-radius: 6px !important;
+    color: #a1a1aa !important;
+    width: 36px !important;
+    height: 36px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .recommendations-modal .close-modal-btn:active {
+    background: #27272a !important;
+  }
+
+  .recommendations-modal .modal-body {
+    padding: 1rem 5px !important;
+    max-height: none !important;
+    height: calc(100vh - 70px) !important;
   }
 
   .modal-filter-section {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 8px !important;
+    margin-bottom: 1rem !important;
+    padding: 0 10px !important;
   }
 
-  .modal-filter-select {
-    width: 100%;
-    max-width: none;
+  .modal-filter-section svg {
+    font-size: 14px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .modal-filter-dropdown {
+    flex: 1 !important;
+    position: relative !important;
+  }
+
+  .modal-filter-dropdown .dropdown-trigger {
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.875rem !important;
+    width: 100% !important;
+  }
+
+  .modal-filter-dropdown .dropdown-menu {
+    width: 100% !important;
+    left: 0 !important;
+    right: 0 !important;
+  }
+
+  .modal-recommendations-scroll {
+    grid-template-columns: 1fr !important;
+    gap: 0.75rem !important;
+    padding: 0 5px !important;
+  }
+
+  .modal-rec-card {
+    height: 100px !important;
+    border-radius: 8px !important;
+  }
+
+  .rec-image {
+    width: 100px !important;
+    min-width: 100px !important;
+  }
+
+  .rec-info {
+    padding: 0.75rem !important;
+  }
+
+  .rec-name {
+    font-size: 0.9rem !important;
+    margin-bottom: 0.25rem !important;
+    -webkit-line-clamp: 2 !important;
+  }
+
+  .rec-address {
+    font-size: 0.75rem !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  .rec-rating {
+    font-size: 0.75rem !important;
+  }
+
+  .add-rec-btn-circular {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    margin: 0 0.5rem !important;
+    font-size: 1rem !important;
+  }
+
+  .load-more-btn {
+    width: 100% !important;
+    margin-top: 1rem !important;
+    padding: 0.875rem !important;
+    font-size: 0.9rem !important;
+  }
+
+  .no-modal-recommendations {
+    padding: 2rem 1rem !important;
+    font-size: 0.875rem !important;
   }
 }
 
+/* Skeleton Loading Animation */
+@keyframes skeleton-pulse {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Distance Skeleton */
+.distance-skeleton {
+  display: inline-block;
+  height: 12px;
+  width: 150px;
+  background: linear-gradient(90deg, #27272a 25%, #3f3f46 50%, #27272a 75%);
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+/* Photo Skeleton */
+.photo-skeleton {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #27272a 25%, #3f3f46 50%, #27272a 75%);
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+.item-photo {
+  position: relative;
+}
+
+/* Mobile skeleton - slightly smaller */
+@media (max-width: 768px) {
+  .distance-skeleton {
+    height: 10px;
+    width: 120px;
+  }
+}

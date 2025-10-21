@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { FaComments, FaUsers } from 'react-icons/fa';
+import { FaComments, FaUsers, FaSearch } from 'react-icons/fa';
 import Layout from './Layout';
-import ChatRoom from './ChatRoom';
 import './styles/Chats.css';
 import API_URL from '../config';
 
 const Chats = () => {
   const [chats, setChats] = useState([]);
-  const [selectedChat, setSelectedChat] = useState(null);
+  const [directChats, setDirectChats] = useState([]);
+  const [friends, setFriends] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   
   const navigate = useNavigate();
   const currentUser = JSON.parse(localStorage.getItem('user')) || {};
@@ -23,6 +24,8 @@ const Chats = () => {
     }
     
     fetchChats();
+    fetchDirectChats();
+    fetchFriends();
   }, [currentUserId, navigate]);
 
   const fetchChats = async () => {
@@ -34,6 +37,50 @@ const Chats = () => {
     } catch (error) {
       console.error("Error fetching chats:", error);
       setLoading(false);
+    }
+  };
+
+  const fetchDirectChats = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/chats/direct/user/${currentUserId}`);
+      setDirectChats(response.data.chats || []);
+    } catch (error) {
+      console.error("Error fetching direct chats:", error);
+    }
+  };
+
+  const fetchFriends = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/friends/${currentUserId}`);
+      setFriends(response.data.friends || []);
+    } catch (error) {
+      console.error("Error fetching friends:", error);
+    }
+  };
+
+  const createDirectChat = async (friend) => {
+    try {
+      // Check if chat already exists
+      const existingChat = directChats.find(chat => 
+        chat.chat_name === `${friend.first_name} ${friend.last_name}`
+      );
+      
+      if (existingChat) {
+        navigate(`/chats/${existingChat.chat_id}?type=direct`);
+        return;
+      }
+
+      // Create new direct chat
+      const response = await axios.post(`${API_URL}/api/chats/direct`, {
+        user_id: currentUserId,
+        friend_id: friend.user_id
+      });
+
+      if (response.data.chat_id) {
+        navigate(`/chats/${response.data.chat_id}?type=direct`);
+      }
+    } catch (error) {
+      console.error('Error creating direct chat:', error);
     }
   };
 
@@ -57,84 +104,159 @@ const Chats = () => {
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
 
+  // Combine all chats (group + direct) and sort by last message time
+  const allChats = [
+    ...chats.map(c => ({ ...c, chat_type: 'group' })),
+    ...directChats.map(c => ({ ...c, chat_type: 'direct' }))
+  ].sort((a, b) => {
+    const timeA = new Date(a.last_message_time || a.created_at || 0);
+    const timeB = new Date(b.last_message_time || b.created_at || 0);
+    return timeB - timeA;
+  });
+
+  const filteredChats = allChats.filter(chat => {
+    const searchLower = searchQuery.toLowerCase();
     return (
+      chat.chat_name?.toLowerCase().includes(searchLower) ||
+      chat.trip_name?.toLowerCase().includes(searchLower)
+    );
+  });
+
+  const filteredFriends = friends.filter(friend => {
+    const searchLower = searchQuery.toLowerCase();
+    // Don't show friends who already have a direct chat
+    const hasChat = directChats.some(chat => 
+      chat.chat_name === `${friend.first_name} ${friend.last_name}`
+    );
+    if (hasChat) return false;
+    
+    return (
+      `${friend.first_name} ${friend.last_name}`.toLowerCase().includes(searchLower) ||
+      friend.username?.toLowerCase().includes(searchLower)
+    );
+  });
+
+  return (
     <Layout>
       <div className="chats-page">
-        {!selectedChat ? (
-          <div className="chats-list-container">
-        <div className="chats-header">
-              <h1>Trip Chats</h1>
-              <p className="chats-subtitle">Message your trip members</p>
-        </div>
-        
-            <div className="chats-list">
-              {loading ? (
-                <div className="chats-loading">
-                  <div className="loading-spinner"></div>
-                  <p>Loading chats...</p>
-                </div>
-              ) : chats.length === 0 ? (
-                <div className="no-chats">
-                  <FaComments className="no-chats-icon" />
-                  <h3>No chats yet</h3>
-                  <p>Create a trip to start chatting with your travel companions</p>
-                  <button 
-                    className="go-home-btn"
-                    onClick={() => navigate('/home')}
-                  >
-                    Go to Home
-                  </button>
-            </div>
-          ) : (
-                chats.map(chat => (
-                  <div 
-                    key={chat.chat_id}
-                    className="chat-card"
-                    onClick={() => setSelectedChat(chat)}
-                  >
-                    <div className="chat-icon">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                      </svg>
-                </div>
-                    
-                    <div className="chat-content">
-                      <div className="chat-title-row">
-                        <h3 className="chat-title">{chat.trip_name}</h3>
-                        {chat.last_message_time && (
-                          <span className="chat-time">{formatTime(chat.last_message_time)}</span>
-                        )}
+        <div className="chats-list-container">
+          {/* Search Bar */}
+          <div className="chats-search">
+            <input
+              type="text"
+              placeholder="Search chats or people..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="chats-search-input"
+            />
+            <button className="chats-search-button" aria-label="Search">
+              <FaSearch />
+            </button>
+          </div>
+          
+          <div className="chats-header">
+            <h1>Messages</h1>
+          </div>
+          
+          <div className="chats-list">
+            {loading ? (
+              <div className="chats-loading">
+                <div className="loading-spinner"></div>
+                <p>Loading chats...</p>
+              </div>
+            ) : filteredChats.length > 0 ? (
+              filteredChats.map(chat => (
+                <div 
+                  key={`${chat.chat_type}-${chat.chat_id}`}
+                  className="chat-card"
+                  onClick={() => navigate(`/chats/${chat.chat_id}?type=${chat.chat_type}`)}
+                >
+                  <div className="chat-avatar">
+                    {(chat.chat_name || chat.trip_name)?.charAt(0).toUpperCase()}
                   </div>
-                      
-                      <div className="chat-preview">
-                        {chat.last_message ? (
-                          <p>
-                            {chat.last_sender && <span className="sender-name">{chat.last_sender}: </span>}
-                            {chat.last_message}
-                          </p>
-                        ) : (
-                          <p className="no-messages-text">No messages yet</p>
-                        )}
-                      </div>
-                      
+                  
+                  <div className="chat-content">
+                    <div className="chat-title-row">
+                      <h3 className="chat-title">{chat.chat_name || chat.trip_name}</h3>
+                      {chat.last_message_time && (
+                        <span className="chat-time">{formatTime(chat.last_message_time)}</span>
+                      )}
+                    </div>
+                    
+                    <div className="chat-preview">
+                      {chat.last_message ? (
+                        <p>
+                          {chat.last_sender && <span className="sender-name">{chat.last_sender}: </span>}
+                          {chat.last_message}
+                        </p>
+                      ) : (
+                        <p className="no-messages-text">No messages yet</p>
+                      )}
+                    </div>
+                    
+                    {chat.chat_type === 'group' && (
                       <div className="chat-meta">
                         <div className="member-count">
                           <FaUsers />
                           <span>{chat.member_count} members</span>
                         </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {chat.unread_count > 0 && (
+                    <div className="unread-badge">{chat.unread_count}</div>
+                  )}
                 </div>
-                </div>
+              ))
+            ) : searchQuery && filteredFriends.length > 0 ? (
+              /* Show friends only when searching */
+              <>
+                <div className="chat-section-title">People</div>
+                {filteredFriends.map(friend => (
+                  <div
+                    key={friend.user_id}
+                    className="chat-card friend-card"
+                    onClick={() => createDirectChat(friend)}
+                  >
+                    <div className="chat-avatar friend-avatar">
+                      {friend.first_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="chat-content">
+                      <div className="chat-title-row">
+                        <h3 className="chat-title">{friend.first_name} {friend.last_name}</h3>
+                      </div>
+                      <div className="chat-preview">
+                        <p className="no-messages-text">Start a conversation</p>
+                      </div>
+                    </div>
+                    <div className="message-icon">
+                      <FaComments />
+                    </div>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <div className="no-chats">
+                <FaComments className="no-chats-icon" />
+                <h3>{searchQuery ? 'No results found' : 'No messages yet'}</h3>
+                <p>
+                  {searchQuery 
+                    ? 'Try searching for a different name'
+                    : 'Search for friends to start chatting'}
+                </p>
+                {!searchQuery && (
+                  <button 
+                    className="go-home-btn"
+                    onClick={() => navigate('/')}
+                  >
+                    Go to Home
+                  </button>
+                )}
               </div>
-            ))
-          )}
+            )}
+          </div>
         </div>
-      </div>
-        ) : (
-          <ChatRoom
-            chat={selectedChat}
-            onBack={() => setSelectedChat(null)}
-          />
-        )}
       </div>
     </Layout>
   );

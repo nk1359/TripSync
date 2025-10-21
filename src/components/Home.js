@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useContext } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from './AuthContext';
 import { useToast } from './ToastContext';
@@ -7,13 +7,16 @@ import './styles/Home.css';
 import AddToCalendarModal from './AddToCalendarModal';
 import DateRangePicker from './DateRangePicker';
 import EditTripModal from './EditTripModal';
-import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft, FaChevronRight, FaTimes, FaEdit } from 'react-icons/fa';
+import { FaSearch, FaCalendarPlus, FaStar, FaMapMarkerAlt, FaCity, FaChevronLeft, FaChevronRight, FaEdit } from 'react-icons/fa';
 import API_URL from '../config';
+import SwipeableViews from 'react-swipeable-views';
+import useIsMobile from '../hooks/useIsMobile';
 
 const Home = () => {
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
   const { showToast, showConfirm } = useToast();
+  const isMobile = useIsMobile();
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [welcomeData, setWelcomeData] = useState(null);
   const [selectedPlaceForModal, setSelectedPlaceForModal] = useState(null);
@@ -117,6 +120,18 @@ const Home = () => {
   useEffect(() => {
     loadHomepageContent();
   }, []);
+
+  // Listen for "openNewTripModal" event from mobile navbar
+  useEffect(() => {
+    const handleOpenModal = () => {
+      if (user) {
+        setShowTripModal(true);
+      }
+    };
+
+    window.addEventListener('openNewTripModal', handleOpenModal);
+    return () => window.removeEventListener('openNewTripModal', handleOpenModal);
+  }, [user]);
 
   // Load homepage content efficiently
   const loadHomepageContent = async () => {
@@ -1173,15 +1188,33 @@ const Home = () => {
     <Layout>
       <div className="home-page">
           <div className="hero-section">
-            <div className="hero-slideshow">
-              {heroImages.map((image, index) => (
-                <div
-                  key={index}
-                  className={`hero-slide ${index === currentHeroIndex ? 'active' : ''}`}
-                  style={{backgroundImage: `url(${image})`}}
-                />
-              ))}
-            </div>
+            {isMobile ? (
+              <SwipeableViews
+                index={currentHeroIndex}
+                onChangeIndex={(index) => setCurrentHeroIndex(index)}
+                enableMouseEvents={false}
+                style={{ height: '100%', width: '100%', position: 'absolute', top: 0, left: 0 }}
+                containerStyle={{ height: '100%', width: '100%' }}
+              >
+                {heroImages.map((image, index) => (
+                  <div
+                    key={index}
+                    className="hero-slide active"
+                    style={{backgroundImage: `url(${image})`, height: '100%'}}
+                  />
+                ))}
+              </SwipeableViews>
+            ) : (
+              <div className="hero-slideshow">
+                {heroImages.map((image, index) => (
+                  <div
+                    key={index}
+                    className={`hero-slide ${index === currentHeroIndex ? 'active' : ''}`}
+                    style={{backgroundImage: `url(${image})`}}
+                  />
+                ))}
+              </div>
+            )}
             <div className="hero-overlay"></div>
             <div className="hero-content">
               <h1 className="hero-title">{user ? 'Discover Remarkable Places' : 'Plan your next adventure'}</h1>

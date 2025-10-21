@@ -108,12 +108,56 @@
   .toast-container {
     right: 1rem;
     left: 1rem;
-    bottom: 160px; /* Positioned above floating chat button on mobile (80px bottom + 60px button + 20px spacing) */
+    bottom: 90px; /* Positioned above mobile navbar */
   }
 
   .toast {
     min-width: auto;
     width: 100%;
+  }
+
+  /* Solid backgrounds for mobile visibility */
+  .toast-success {
+    background: rgba(16, 185, 129, 0.95);
+    border: 1px solid rgba(16, 185, 129, 1);
+  }
+
+  .toast-error {
+    background: rgba(239, 68, 68, 0.95);
+    border: 1px solid rgba(239, 68, 68, 1);
+  }
+
+  .toast-info {
+    background: rgba(59, 130, 246, 0.95);
+    border: 1px solid rgba(59, 130, 246, 1);
+  }
+
+  .toast-success .toast-message,
+  .toast-success .toast-icon {
+    color: #ffffff;
+  }
+
+  .toast-error .toast-message,
+  .toast-error .toast-icon {
+    color: #ffffff;
+  }
+
+  .toast-info .toast-message,
+  .toast-info .toast-icon {
+    color: #ffffff;
+  }
+
+  .toast-close {
+    color: #ffffff;
+  }
+
+  .toast-close:hover {
+    color: #f1f5f9;
+  }
+
+  /* Remove hover animations on mobile */
+  .toast-close:hover {
+    background: transparent;
   }
 }
 

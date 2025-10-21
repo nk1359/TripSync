@@ -3,15 +3,18 @@ import { AuthContext } from './AuthContext';
 import { useToast } from './ToastContext';
 import Layout from './Layout';
 import axios from 'axios';
-import { FaUserFriends, FaSearch, FaTimesCircle, FaCheckCircle, FaComments } from 'react-icons/fa';
+import { FaUserFriends, FaSearch, FaTimesCircle, FaCheckCircle, FaComments, FaChevronDown } from 'react-icons/fa';
+import useIsMobile from '../hooks/useIsMobile';
 import './styles/Friends.css';
 import API_URL from '../config';
 
 const Friends = () => {
   const { user } = useContext(AuthContext);
   const { showConfirm } = useToast();
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState('friends'); // 'friends' | 'suggested' | 'requests' | 'search'
   const [requestsSubTab, setRequestsSubTab] = useState('incoming'); // 'incoming' | 'pending'
+  const [showDropdown, setShowDropdown] = useState(false); // For mobile dropdown
   const [friends, setFriends] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [friendRequests, setFriendRequests] = useState([]);
@@ -275,33 +278,81 @@ const Friends = () => {
             <p>Manage your friends and connect with new people</p>
           </div>
 
-          {/* Tabs */}
-          <div className="friends-tabs">
-            <button 
-              className={`friends-tab ${activeTab === 'friends' ? 'active' : ''}`}
-              onClick={() => setActiveTab('friends')}
-            >
-              <FaUserFriends /> My Friends ({friends.length})
-            </button>
-            <button 
-              className={`friends-tab ${activeTab === 'requests' ? 'active' : ''}`}
-              onClick={() => setActiveTab('requests')}
-            >
-              Requests {friendRequests.length > 0 && `(${friendRequests.length})`}
-            </button>
-            <button 
-              className={`friends-tab ${activeTab === 'suggested' ? 'active' : ''}`}
-              onClick={() => setActiveTab('suggested')}
-            >
-              Suggested
-            </button>
-            <button 
-              className={`friends-tab ${activeTab === 'search' ? 'active' : ''}`}
-              onClick={() => setActiveTab('search')}
-            >
-              <FaSearch /> Search
-            </button>
-          </div>
+          {/* Tabs - Desktop */}
+          {!isMobile && (
+            <div className="friends-tabs">
+              <button 
+                className={`friends-tab ${activeTab === 'friends' ? 'active' : ''}`}
+                onClick={() => setActiveTab('friends')}
+              >
+                <FaUserFriends /> My Friends ({friends.length})
+              </button>
+              <button 
+                className={`friends-tab ${activeTab === 'requests' ? 'active' : ''}`}
+                onClick={() => setActiveTab('requests')}
+              >
+                Requests {friendRequests.length > 0 && `(${friendRequests.length})`}
+              </button>
+              <button 
+                className={`friends-tab ${activeTab === 'suggested' ? 'active' : ''}`}
+                onClick={() => setActiveTab('suggested')}
+              >
+                Suggested
+              </button>
+              <button 
+                className={`friends-tab ${activeTab === 'search' ? 'active' : ''}`}
+                onClick={() => setActiveTab('search')}
+              >
+                <FaSearch /> Search
+              </button>
+            </div>
+          )}
+
+          {/* Dropdown - Mobile */}
+          {isMobile && (
+            <div className="friends-dropdown-container">
+              <button 
+                className="friends-dropdown-trigger"
+                onClick={() => setShowDropdown(!showDropdown)}
+              >
+                <span>
+                  {activeTab === 'friends' && `My Friends (${friends.length})`}
+                  {activeTab === 'requests' && `Requests ${friendRequests.length > 0 ? `(${friendRequests.length})` : ''}`}
+                  {activeTab === 'suggested' && 'Suggested'}
+                  {activeTab === 'search' && 'Search'}
+                </span>
+                <FaChevronDown className={`dropdown-chevron ${showDropdown ? 'open' : ''}`} />
+              </button>
+              {showDropdown && (
+                <div className="friends-dropdown-menu">
+                  <button 
+                    className={`friends-dropdown-item ${activeTab === 'friends' ? 'active' : ''}`}
+                    onClick={() => { setActiveTab('friends'); setShowDropdown(false); }}
+                  >
+                    <FaUserFriends /> My Friends ({friends.length})
+                  </button>
+                  <button 
+                    className={`friends-dropdown-item ${activeTab === 'requests' ? 'active' : ''}`}
+                    onClick={() => { setActiveTab('requests'); setShowDropdown(false); }}
+                  >
+                    Requests {friendRequests.length > 0 && `(${friendRequests.length})`}
+                  </button>
+                  <button 
+                    className={`friends-dropdown-item ${activeTab === 'suggested' ? 'active' : ''}`}
+                    onClick={() => { setActiveTab('suggested'); setShowDropdown(false); }}
+                  >
+                    Suggested
+                  </button>
+                  <button 
+                    className={`friends-dropdown-item ${activeTab === 'search' ? 'active' : ''}`}
+                    onClick={() => { setActiveTab('search'); setShowDropdown(false); }}
+                  >
+                    <FaSearch /> Search
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Tab Content */}
           <div className="friends-content">

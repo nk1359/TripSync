@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { FaComments, FaTimes, FaMinus, FaPaperPlane, FaChevronUp, FaUser } from 'react-icons/fa';
+import { useLocation } from 'react-router-dom';
+import useIsMobile from '../hooks/useIsMobile';
 import './styles/FloatingChat.css';
 import API_URL from '../config';
 
 const FloatingChat = () => {
+  const isMobile = useIsMobile();
+  const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [chats, setChats] = useState([]);
   const [friends, setFriends] = useState([]);
@@ -24,6 +28,9 @@ const FloatingChat = () => {
   const currentUser = JSON.parse(localStorage.getItem('user')) || {};
 
   useEffect(() => {
+    // Skip API calls on mobile
+    if (isMobile) return;
+    
     if (currentUser.user_id) {
       fetchChats();
       fetchDirectChats();
@@ -225,6 +232,12 @@ const FloatingChat = () => {
     );
   });
 
+  // Hide FloatingChat on mobile devices (after all hooks are defined)
+  if (isMobile) {
+    console.log('FloatingChat: Hiding on mobile');
+    return null;
+  }
+
   return (
     <>
       {/* Floating Chat Button */}
@@ -334,10 +347,14 @@ const ChatWindow = ({ chat, index, onClose, onToggleMinimize, currentUserId, isR
   const [loading, setLoading] = useState(true);
   const [unreadMessageId, setUnreadMessageId] = useState(null);
   const messagesEndRef = React.useRef(null);
+  const shouldScrollRef = React.useRef(true); // Track if we should auto-scroll
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom when messages change (only if flag is set)
   useEffect(() => {
-    scrollToBottom();
+    if (shouldScrollRef.current) {
+      scrollToBottom();
+      shouldScrollRef.current = false; // Reset the flag after scrolling
+    }
   }, [messages]);
 
   const scrollToBottom = () => {
@@ -345,8 +362,9 @@ const ChatWindow = ({ chat, index, onClose, onToggleMinimize, currentUserId, isR
   };
 
   useEffect(() => {
+    shouldScrollRef.current = true; // Scroll on initial load
     fetchMessages();
-    const interval = setInterval(fetchMessages, 3000);
+    const interval = setInterval(fetchMessages, 3000); // Poll without scrolling
     return () => clearInterval(interval);
   }, [chat.chat_id]);
 
@@ -389,6 +407,7 @@ const ChatWindow = ({ chat, index, onClose, onToggleMinimize, currentUserId, isR
         message_content: newMessage
       });
       setNewMessage('');
+      shouldScrollRef.current = true; // Scroll when user sends a message
       fetchMessages();
     } catch (error) {
       console.error('Error sending message:', error);

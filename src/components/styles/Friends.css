@@ -60,6 +60,98 @@
   border-bottom-color: #ffffff;
 }
 
+/* Dropdown for mobile */
+.friends-dropdown-container {
+  position: relative;
+  margin-bottom: 1.5rem;
+}
+
+.friends-dropdown-trigger {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  background: #27272a;
+  border: 1.5px solid #3f3f46;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.2s ease;
+}
+
+.friends-dropdown-trigger:hover {
+  border-color: #52525b;
+}
+
+.dropdown-chevron {
+  transition: transform 0.2s ease;
+  font-size: 0.875rem;
+  color: #a1a1aa;
+}
+
+.dropdown-chevron.open {
+  transform: rotate(180deg);
+}
+
+.friends-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  overflow: hidden;
+  animation: dropdownSlide 0.15s ease;
+}
+
+@keyframes dropdownSlide {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.friends-dropdown-item {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  background: transparent;
+  border: none;
+  color: #e4e4e7;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  text-align: left;
+  border-bottom: 1px solid #3f3f46;
+}
+
+.friends-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.friends-dropdown-item:hover {
+  background: #3f3f46;
+  color: #ffffff;
+}
+
+.friends-dropdown-item.active {
+  background: #1f1f23;
+  color: #88BDF2;
+}
+
 /* Content Area */
 .friends-content {
   min-height: 400px;
@@ -391,41 +483,148 @@
 /* Responsive */
 @media (max-width: 768px) {
   .friends-page {
-    padding: 5.5rem 1rem 1.5rem;
+    padding: 0.5rem;
+    padding-top: 0.5rem;
+    min-height: 100vh;
+  }
+
+  .friends-container {
+    padding: 0.75rem;
+  }
+
+  .friends-header {
+    margin-bottom: 1.25rem;
   }
 
   .friends-header h1 {
-    font-size: 1.75rem;
+    font-size: 1.625rem;
   }
 
+  .friends-header p {
+    font-size: 0.875rem;
+  }
+
+  /* Tabs - Ensure single line fit */
   .friends-tabs {
-    gap: 0.5rem;
+    gap: 0;
     overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .friends-tabs::-webkit-scrollbar {
+    display: none;
   }
 
   .friends-tab {
-    padding: 0.875rem 1rem;
-    font-size: 0.875rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.8125rem;
     flex-shrink: 0;
+    white-space: nowrap;
   }
 
   .friends-grid {
     grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .person-card {
+    padding: 0.75rem;
+  }
+
+  .person-avatar {
+    width: 44px;
+    height: 44px;
+    font-size: 1.125rem;
+  }
+  
+  /* Reduce search bar padding */
+  .search-input-wrapper input {
+    padding: 0.65rem 1rem;
+    font-size: 0.875rem;
+  }
+  
+  /* Reduce button padding */
+  .action-button,
+  .primary-button,
+  .secondary-button {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+  }
+  
+  /* Reduce subtab padding */
+  .requests-subtab {
+    padding: 0.65rem 1rem;
+    font-size: 0.8125rem;
+  }
+
+  .person-info h3 {
+    font-size: 0.9375rem;
+  }
+
+  .person-username {
+    font-size: 0.8125rem;
+  }
+
+  .action-buttons {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .action-btn {
+    padding: 0.5rem 0.875rem;
+    font-size: 0.8125rem;
   }
 
   .search-input-container {
     max-width: 100%;
   }
 
+  .search-input-wrapper input {
+    font-size: 0.9375rem;
+    padding: 0.75rem 1rem;
+  }
+
+  /* Subtabs */
   .requests-subtabs {
     gap: 0;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .requests-subtabs::-webkit-scrollbar {
+    display: none;
   }
 
   .requests-subtab {
     padding: 0.75rem 1rem;
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* Remove hover effects on mobile */
+  .person-card:hover,
+  .friends-tab:hover,
+  .requests-subtab:hover,
+  .action-btn:hover {
+    transform: none;
+    background: inherit;
+  }
+
+  .person-card:active {
+    background: #2a2a2e;
+  }
+
+  .friends-tab:active {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .action-btn:active {
+    opacity: 0.8;
   }
 }
 

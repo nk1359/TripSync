@@ -16,9 +16,12 @@ import Layout from './Layout';
 import { useToast } from './ToastContext';
 import './styles/Calendar.css';
 import API_URL from '../config';
+import { useSwipeable } from 'react-swipeable';
+import useIsMobile from '../hooks/useIsMobile';
 
 const Calendar = () => {
   const { showToast, showConfirm } = useToast();
+  const isMobile = useIsMobile();
   const [events, setEvents] = useState([]);
   const [groups, setGroups] = useState([]);
   const [isLoading, setIsLoading] = useState(true);

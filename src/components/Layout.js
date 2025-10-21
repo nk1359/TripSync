@@ -14,20 +14,23 @@ import {
   FaCheckCircle,
   FaTimesCircle,
   FaBell,
-  FaUserFriends
+  FaUserFriends,
+  FaPlus
 } from 'react-icons/fa';
 import axios from 'axios';
+import { useSpring } from 'react-spring';
+import useIsMobile from '../hooks/useIsMobile';
 import './styles/Layout.css';
 import API_URL from '../config';
 
-const Layout = ({ children }) => {
+const Layout = ({ children, hideNavbar = false }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useContext(AuthContext); 
   const { showToast } = useToast();
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const isMobile = useIsMobile();
 
   // Refs for handling outside clicks
   const sidebarRef = useRef(null);
@@ -116,9 +119,9 @@ const Layout = ({ children }) => {
     }
   };
 
-  // Logo click triggers full page reload
+  // Logo click navigates to home
   const handleLogoClick = () => {
-    window.location.href = '/';
+    navigate('/');
   };
 
   // Navigate to Friends page
@@ -315,9 +318,20 @@ const Layout = ({ children }) => {
     }
   };
 
+  // Mobile notification dropdown animation
+  const notificationSpring = useSpring({
+    opacity: showNotifications ? 1 : 0,
+    transform: showNotifications ? 'translateY(0)' : 'translateY(-10px)',
+    config: { tension: 300, friction: 25 }
+  });
+
+  // Don't render navbar if hideNavbar is true (for individual chat on mobile)
+  const shouldShowNavbar = !hideNavbar;
+
   return (
-    <div className={`page-wrapper`}>
+    <div className={`page-wrapper ${isMobile ? 'mobile-layout' : ''}`}>
       <main className="main-section">
+        {shouldShowNavbar && !isMobile && (
         <div className="top-bar">
           <div className="left-area">
             <div className="app-logo" onClick={handleLogoClick} style={{ cursor: 'pointer' }}>
@@ -577,8 +591,277 @@ const Layout = ({ children }) => {
             )}
           </div>
         </div>
+        )}
         
-        <div className="content">
+        {/* Mobile Navbar - Only show when logged in */}
+        {shouldShowNavbar && isMobile && user && (
+          <>
+            {/* Mobile Top Bar */}
+            <div className="mobile-top-bar">
+              <div className="mobile-top-left">
+                <img src="/Trip Sync.png" alt="TripSync" className="mobile-top-logo" onClick={handleLogoClick} />
+              </div>
+              <div className="mobile-top-right">
+                {/* Notification Bell */}
+                <div 
+                  ref={notificationRef}
+                  className="mobile-notification-bell" 
+                  onClick={handleNotificationBellClick}
+                >
+                  <FaBell />
+                  {notifications.length > 0 && (
+                    <span className="mobile-notification-badge">{notifications.length}</span>
+                  )}
+                  
+                  {showNotifications && (
+                        <div className="mobile-notification-dropdown">
+                          <div className="dropdown-header">
+                            <h3>Notifications</h3>
+                            <span className="notification-count">{notifications.length}</span>
+                          </div>
+                          <div className="notification-list">
+                            {notifications.length > 0 ? (
+                              notifications.map((notification, index) => (
+                                <div 
+                                  key={`${notification.type}-${notification.notification_id || index}`} 
+                                  className={`notification-item ${notification.type}`}
+                                  onClick={() => handleNotificationClick(notification)}
+                                >
+                                  <div className="notification-avatar">
+                                    {notification.type === 'friend_request' && notification.first_name.charAt(0).toUpperCase()}
+                                    {notification.type === 'trip_invitation' && notification.first_name.charAt(0).toUpperCase()}
+                                    {notification.type === 'member_request' && notification.first_name.charAt(0).toUpperCase()}
+                                    {notification.type === 'trip_added' && notification.first_name.charAt(0).toUpperCase()}
+                                    {notification.type === 'message' && notification.chat_name.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div className="notification-content">
+                                    {notification.type === 'friend_request' && (
+                                      <>
+                                        <div className="notification-title">
+                                          {notification.first_name} {notification.last_name}
+                                        </div>
+                                        <div className="notification-subtitle">
+                                          Sent you a friend request
+                                        </div>
+                                      </>
+                                    )}
+                                    {notification.type === 'trip_invitation' && (
+                                      <>
+                                        <div className="notification-title">
+                                          {notification.message_preview}
+                                        </div>
+                                        <div className="notification-subtitle">
+                                          {notification.first_name} invited you to join this trip
+                                        </div>
+                                      </>
+                                    )}
+                                    {notification.type === 'member_request' && (
+                                      <>
+                                        <div className="notification-title">
+                                          {notification.trip_name}
+                                        </div>
+                                        <div className="notification-subtitle">
+                                          {notification.first_name} wants to add {notification.friend_first_name} to the trip
+                                        </div>
+                                      </>
+                                    )}
+                                    {notification.type === 'trip_added' && (
+                                      <>
+                                        <div className="notification-title">
+                                          {notification.first_name} {notification.last_name}
+                                        </div>
+                                        <div className="notification-subtitle">
+                                          Added you to {notification.message_preview}
+                                        </div>
+                                      </>
+                                    )}
+                                    {notification.type === 'message' && (
+                                      <>
+                                        <div className="notification-title">
+                                          {notification.chat_name}
+                                        </div>
+                                        <div className="notification-subtitle">
+                                          {notification.message_preview}
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                  <div className="unread-indicator"></div>
+                                  {notification.type === 'friend_request' && (
+                                    <div className="notification-actions" onClick={(e) => e.stopPropagation()}>
+                                      <button 
+                                        className="accept-button" 
+                                        onClick={() => acceptFriendRequest(notification.notification_id)}
+                                        aria-label="Accept"
+                                      >
+                                        <FaCheckCircle />
+                                      </button>
+                                      <button 
+                                        className="reject-button"
+                                        onClick={() => rejectFriendRequest(notification.notification_id)}
+                                        aria-label="Reject"
+                                      >
+                                        <FaTimesCircle />
+                                      </button>
+                                    </div>
+                                  )}
+                                  {notification.type === 'trip_invitation' && (
+                                    <div className="notification-actions" onClick={(e) => e.stopPropagation()}>
+                                      <button 
+                                        className="accept-button" 
+                                        onClick={() => acceptTripInvitation(notification.notification_id)}
+                                        aria-label="Accept"
+                                      >
+                                        <FaCheckCircle />
+                                      </button>
+                                      <button 
+                                        className="reject-button"
+                                        onClick={() => declineTripInvitation(notification.notification_id)}
+                                        aria-label="Decline"
+                                      >
+                                        <FaTimesCircle />
+                                      </button>
+                                    </div>
+                                  )}
+                                  {notification.type === 'member_request' && (
+                                    <div className="notification-actions" onClick={(e) => e.stopPropagation()}>
+                                      <button 
+                                        className="accept-button" 
+                                        onClick={() => {
+                                          axios.post(`${API_URL}/api/trips/${notification.trip_id}/member-requests/${notification.notification_id}/approve`, {
+                                            user_id: user.user_id
+                                          })
+                                          .then(() => {
+                                            fetchNotifications();
+                                            showToast('Request approved!', 'success');
+                                          })
+                                          .catch(err => {
+                                            console.error(err);
+                                            showToast('Failed to approve request', 'error');
+                                          });
+                                        }}
+                                        aria-label="Approve"
+                                      >
+                                        <FaCheckCircle />
+                                      </button>
+                                      <button 
+                                        className="reject-button"
+                                        onClick={() => {
+                                          axios.post(`${API_URL}/api/trips/${notification.trip_id}/member-requests/${notification.notification_id}/reject`, {
+                                            user_id: user.user_id
+                                          })
+                                          .then(() => {
+                                            fetchNotifications();
+                                            showToast('Request rejected', 'info');
+                                          })
+                                          .catch(err => {
+                                            console.error(err);
+                                            showToast('Failed to reject request', 'error');
+                                          });
+                                        }}
+                                        aria-label="Reject"
+                                      >
+                                        <FaTimesCircle />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              ))
+                            ) : (
+                              <div className="empty-notifications">
+                                <FaBell style={{fontSize: '2rem', color: '#52525b', marginBottom: '0.5rem'}} />
+                                <p>No new notifications</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Profile Menu */}
+                    <div 
+                      ref={profileRef}
+                      className="mobile-profile-icon" 
+                      onClick={handleProfileClick}
+                    >
+                      {user.avatar ? (
+                        <img src={user.avatar} alt="Profile" className="mobile-avatar-img" />
+                      ) : (
+                        <div className="mobile-user-avatar">
+                          {user.first_name ? user.first_name.charAt(0).toUpperCase() : <FaUser />}
+                        </div>
+                      )}
+                      
+                      {dropdownOpen && (
+                        <div className="mobile-dropdown-menu">
+                          <button 
+                            onClick={handleAddFriends} 
+                            className="dropdown-item"
+                          >
+                            <FaUserFriends className="dropdown-icon" />
+                            <span>Add Friends</span>
+                          </button>
+                          <button onClick={handleSignOut} className="dropdown-item logout-item">
+                            <FaSignOutAlt className="dropdown-icon" />
+                            <span>Sign Out</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+              </div>
+            </div>
+
+            {/* Mobile Bottom Bar */}
+            <div className="mobile-bottom-bar">
+              <button 
+                className={`mobile-nav-btn ${location.pathname === '/' ? 'active' : ''}`}
+                onClick={() => handleNavigation('/')}
+                title="Home"
+              >
+                <FaHome />
+              </button>
+              <button 
+                className={`mobile-nav-btn ${location.pathname === '/planner' ? 'active' : ''}`}
+                onClick={() => handleNavigation('/planner')}
+                title="Planner"
+              >
+                <FaCalendarAlt />
+              </button>
+              <button 
+                className="mobile-nav-btn mobile-add-btn"
+                onClick={() => {
+                  // Store current location for return navigation
+                  sessionStorage.setItem('returnPath', location.pathname);
+                  // Navigate to planner and open modal
+                  if (location.pathname !== '/planner') {
+                    navigate('/planner', { state: { openTripModal: true } });
+                  } else {
+                    window.dispatchEvent(new CustomEvent('openNewTripModal'));
+                  }
+                }}
+                title="New Trip"
+              >
+                <FaPlus />
+              </button>
+              <button 
+                className={`mobile-nav-btn ${location.pathname.startsWith('/chats') ? 'active' : ''}`}
+                onClick={() => handleNavigation('/chats')}
+                title="Chats"
+              >
+                <FaComments />
+              </button>
+              <button 
+                className={`mobile-nav-btn ${location.pathname === '/friends' ? 'active' : ''}`}
+                onClick={() => handleNavigation('/friends')}
+                title="Friends"
+              >
+                <FaUserFriends />
+              </button>
+            </div>
+          </>
+        )}
+        
+        <div className={`content ${isMobile && user ? 'mobile-content' : ''}`}>
           {children}
         </div>
       </main>

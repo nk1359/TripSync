@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
+import useIsMobile from '../hooks/useIsMobile';
 import './styles/DateRangePicker.css';
 
 const DateRangePicker = ({ startDate, endDate, onStartDateChange, onEndDateChange, label }) => {
+  const isMobile = useIsMobile();
   const [showCalendar, setShowCalendar] = useState(false);
   const [editingField, setEditingField] = useState(null); // 'start' or 'end'
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -322,28 +324,30 @@ const DateRangePicker = ({ startDate, endDate, onStartDateChange, onEndDateChang
               {renderMonth(0)}
             </div>
             
-            {/* Second Month */}
-            <div className="calendar-month-section">
-              <div className="calendar-nav">
-                <button onClick={(e) => { e.stopPropagation(); previousMonth(); }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="15 18 9 12 15 6"></polyline>
-                  </svg>
-                </button>
-                <div className="calendar-month-header">
-                  {getMonthName(
-                    currentMonth.month === 11 ? currentMonth.year + 1 : currentMonth.year,
-                    (currentMonth.month + 1) % 12
-                  )}
+            {/* Second Month - Hide on mobile */}
+            {!isMobile && (
+              <div className="calendar-month-section">
+                <div className="calendar-nav">
+                  <button onClick={(e) => { e.stopPropagation(); previousMonth(); }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                  </button>
+                  <div className="calendar-month-header">
+                    {getMonthName(
+                      currentMonth.month === 11 ? currentMonth.year + 1 : currentMonth.year,
+                      (currentMonth.month + 1) % 12
+                    )}
+                  </div>
+                  <button onClick={(e) => { e.stopPropagation(); nextMonth(); }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </button>
                 </div>
-                <button onClick={(e) => { e.stopPropagation(); nextMonth(); }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                  </svg>
-                </button>
+                {renderMonth(1)}
               </div>
-              {renderMonth(1)}
-            </div>
+            )}
           </div>
         </div>
       )}

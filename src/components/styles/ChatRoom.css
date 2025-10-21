@@ -291,34 +291,108 @@
   box-shadow: none;
 }
 
+/* Mobile ChatRoom Specific */
+.mobile-chatroom {
+  height: 100vh;
+  padding-top: 0;
+}
+
+.mobile-chatroom .chatroom-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+}
+
+.mobile-chatroom .chatroom-messages {
+  padding-top: 80px; /* Height of fixed header */
+  padding-bottom: 1rem;
+}
+
+.mobile-chatroom .chatroom-input {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
-  .chats-page {
-    padding: 0;
-  }
-
-  .chats-list-container {
-    padding: 1.5rem 1rem;
-  }
-
-  .chats-header h1 {
-    font-size: 1.875rem;
-  }
-
-  .chat-card {
-    padding: 1.25rem;
-  }
-
-  .chat-icon {
-    width: 48px;
-    height: 48px;
-  }
-
   .chatroom-container {
     height: 100vh;
+    padding-top: 0;
+  }
+
+  .chatroom-header {
+    padding: 0.75rem 1rem;
+  }
+
+  .chatroom-info h2 {
+    font-size: 1.05rem;
+  }
+
+  .chatroom-messages {
+    padding: 1rem 0.75rem;
   }
 
   .message-bubble {
-    max-width: 80%;
+    max-width: 85%;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .message-bubble p {
+    font-size: 0.875rem;
+    color: inherit !important;
+  }
+
+  .message-sent .message-bubble {
+    background: linear-gradient(135deg, #88BDF2 0%, #6eaadb 100%) !important;
+  }
+
+  .message-sent .message-bubble p {
+    color: #000000 !important;
+  }
+
+  .message-received .message-bubble {
+    background: #1f1f23 !important;
+    border: 1px solid #27272a !important;
+  }
+
+  .message-received .message-bubble p {
+    color: #ffffff !important;
+  }
+
+  .chatroom-input {
+    padding: 1rem;
+  }
+
+  .message-input {
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .send-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Remove hover effects on mobile */
+  .back-btn:hover {
+    transform: none;
+    background: transparent;
+  }
+
+  .back-btn:active {
+    background: #27272a;
+  }
+
+  .send-btn:hover:not(:disabled) {
+    transform: none;
+  }
+
+  .send-btn:active:not(:disabled) {
+    transform: scale(0.95);
   }
 }

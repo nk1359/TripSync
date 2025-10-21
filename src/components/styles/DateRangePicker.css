@@ -272,13 +272,140 @@
 }
 
 @media (max-width: 768px) {
-  .calendar-months-container {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
+  .date-range-picker {
+    margin-top: 1rem !important;
+    margin-bottom: 1rem !important;
   }
 
   .date-inputs-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 0.5rem !important;
+    width: 100% !important;
+  }
+
+  .date-input-group {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .date-input-group label {
+    font-size: 0.75rem !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  .date-display-input {
+    font-size: 0.75rem !important;
+    padding: 0.5rem !important;
+    min-height: 40px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  
+  /* Reduce calendar dropdown padding */
+  .calendar-dropdown {
+    padding: 5px !important;
+    margin: 0.5rem 5px !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+  }
+  
+  .calendar-header {
+    padding: 0.5rem 5px !important;
+    margin-bottom: 0.75rem !important;
+  }
+  
+  .calendar-grid {
+    gap: 0.25rem !important;
+  }
+  
+  .calendar-day {
+    width: 38px !important;
+    height: 38px !important;
+    font-size: 0.75rem !important;
+  }
+  
+  .month-selector button {
+    padding: 0.5rem !important;
+    font-size: 0.75rem !important;
+  }
+
+  .calendar-months-container {
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+    margin-top: 2rem !important;
+  }
+
+  .calendar-month-section {
+    width: 100% !important;
+  }
+
+  .calendar-month-view {
+    width: 100% !important;
+  }
+
+  .calendar-month-header {
+    font-size: 0.875rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  .calendar-day-headers {
+    gap: 0.25rem !important;
+  }
+
+  .calendar-day-header {
+    font-size: 0.65rem !important;
+    padding: 0.25rem 0 !important;
+  }
+
+  .calendar-days-grid {
+    gap: 0.25rem !important;
+  }
+
+  .calendar-day-cell {
+    font-size: 0.75rem !important;
+    padding: 0 !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+  }
+
+  .calendar-close-btn {
+    top: 5px !important;
+    right: 5px !important;
+  }
+
+  .calendar-editing-hint {
+    font-size: 0.75rem !important;
+    padding: 0.5rem 5px !important;
+    top: 5px !important;
+    left: 5px !important;
+  }
+
+  .calendar-nav {
+    padding: 0 5px !important;
+  }
+
+  /* Remove hover effects on mobile */
+  .date-display-input:hover {
+    border-color: #3f3f46 !important;
+    background: #18181b !important;
+  }
+
+  .calendar-day-cell:hover {
+    background: transparent !important;
+  }
+
+  .calendar-day-cell:active:not(.empty) {
+    background: rgba(136, 189, 242, 0.2) !important;
+  }
+
+  .calendar-nav button:hover {
+    background: transparent !important;
+  }
+
+  .calendar-nav button:active {
+    background: #27272a !important;
   }
 }
 

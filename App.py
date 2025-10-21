@@ -1,10 +1,14 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import mysql.connector
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
-import googlemaps
+import requests
+import json
+import time
+import hashlib
+import threading
 
 # Load environment variables
 load_dotenv()
@@ -21,13 +25,772 @@ db_config = {
 app = Flask(__name__, static_folder='build', static_url_path='')
 CORS(app)
 
-# Initialize Google Maps client
-GOOGLE_PLACES_API_KEY = os.getenv('GOOGLE_PLACES_API_KEY')
-gmaps = None
-if GOOGLE_PLACES_API_KEY:
-    gmaps = googlemaps.Client(key=GOOGLE_PLACES_API_KEY)
+# Add request logging
+@app.before_request
+def log_request():
+    import sys
+    sys.stdout.flush()  # Force flush output
+    if request.method == 'POST' and 'recommendations' in request.path:
+        print(f"\n[REQUEST] POST {request.path}", flush=True)
+        print(f"[REQUEST] Content-Type: {request.content_type}", flush=True)
+
+# Google Places API removed - using Yelp/OpenTripMap/Nominatim instead
+
+# Load alternative API keys
+YELP_API_KEY = os.getenv('YELP_API_KEY')
+OPEN_TRIP_MAP_API_KEY = os.getenv('OPEN_TRIP_MAP_API_KEY')
+
+# ============================================================================
+# API CLIENT WRAPPER CLASSES WITH CACHING
+# ============================================================================
+
+class YelpClient:
+    """Wrapper for Yelp Fusion API with MySQL caching"""
+    
+    BASE_URL = "https://api.yelp.com/v3"
+    CACHE_EXPIRY_DAYS = 7  # Cache for 7 days for performance
+    
+    def __init__(self, api_key, db_config):
+        self.api_key = api_key
+        self.db_config = db_config
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json"
+        }
+    
+    def _get_cache_key(self, method, params):
+        """Generate cache key from method and params"""
+        param_str = json.dumps(params, sort_keys=True)
+        cache_key = f"yelp:{method}:{hashlib.md5(param_str.encode()).hexdigest()}"
+        print(f"[YELP CACHE KEY] {cache_key} <- {param_str[:100]}")  # Debug: show cache key
+        return cache_key
+    
+    def _get_from_cache(self, cache_key):
+        """Retrieve from cached_searches table"""
+        try:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT data FROM cached_searches 
+                WHERE cache_key = %s AND cache_expires_at > NOW()
+            """, (cache_key,))
+            result = cursor.fetchone()
+            conn.close()
+            if result:
+                print(f"[YELP CACHE HIT] {cache_key}")
+                return json.loads(result['data'])
+            return None
+        except Exception as e:
+            print(f"[YELP CACHE ERROR] {e}")
+            return None
+    
+    def _save_to_cache(self, cache_key, data):
+        """Save to cached_searches table"""
+        try:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor()
+            expires_at = datetime.now() + timedelta(days=self.CACHE_EXPIRY_DAYS)
+            cursor.execute("""
+                INSERT INTO cached_searches (cache_key, data, cache_expires_at)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    data = VALUES(data), 
+                    cache_expires_at = VALUES(cache_expires_at),
+                    cache_created_at = NOW()
+            """, (cache_key, json.dumps(data), expires_at))
+            conn.commit()
+            conn.close()
+            print(f"[YELP CACHE SAVE] {cache_key}")
+        except Exception as e:
+            print(f"[YELP CACHE SAVE ERROR] {e}")
+    
+    def _save_to_cache_async(self, cache_key, data):
+        """Save to cache in background thread (non-blocking)"""
+        def save():
+            self._save_to_cache(cache_key, data)
+        
+        thread = threading.Thread(target=save, daemon=True)
+        thread.start()
+    
+    def search(self, term=None, location=None, latitude=None, longitude=None, 
+               categories=None, radius=None, limit=20, offset=0, sort_by='best_match', skip_cache=False):
+        """Search for businesses"""
+        cache_key = self._get_cache_key('search', {
+            'term': term, 'location': location, 'lat': latitude, 'lng': longitude,
+            'categories': categories, 'radius': radius, 'limit': limit, 'offset': offset
+        })
+        
+        # Check cache (unless skip_cache is True)
+        if not skip_cache:
+            cached = self._get_from_cache(cache_key)
+            if cached:
+                return cached
+        
+        # Make API request
+        params = {'limit': limit, 'offset': offset}
+        if term:
+            params['term'] = term
+        if location:
+            params['location'] = location
+        if latitude and longitude:
+            params['latitude'] = latitude
+            params['longitude'] = longitude
+        if categories:
+            params['categories'] = categories
+        if radius:
+            params['radius'] = min(radius, 40000)  # Max 40km
+        if sort_by:
+            params['sort_by'] = sort_by
+        
+        try:
+            response = requests.get(f"{self.BASE_URL}/businesses/search", 
+                                   headers=self.headers, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                # Save to cache asynchronously (non-blocking)
+                self._save_to_cache_async(cache_key, data)
+                return data
+            else:
+                print(f"[YELP API ERROR] {response.status_code}: {response.text}")
+                return None
+        except Exception as e:
+            print(f"[YELP API ERROR] {e}")
+            return None
+    
+    def _save_place_to_cache(self, cache_key, data):
+        """Save place to cached_places table"""
+        try:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor()
+            expires_at = datetime.now() + timedelta(days=self.CACHE_EXPIRY_DAYS)
+            cursor.execute("""
+                INSERT INTO cached_places (place_id, source, data, cache_expires_at)
+                VALUES (%s, 'yelp', %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    data = VALUES(data), 
+                    cache_expires_at = VALUES(cache_expires_at)
+            """, (cache_key, json.dumps(data), expires_at))
+            conn.commit()
+            conn.close()
+            print(f"[YELP PLACE CACHE SAVE] {cache_key}")
+        except Exception as e:
+            print(f"[YELP PLACE CACHE SAVE ERROR] {e}")
+    
+    def _save_place_to_cache_async(self, cache_key, data):
+        """Save place to cache in background thread (non-blocking)"""
+        def save():
+            self._save_place_to_cache(cache_key, data)
+        
+        thread = threading.Thread(target=save, daemon=True)
+        thread.start()
+    
+    def get_business(self, business_id):
+        """Get business details"""
+        cache_key = f"yelp:{business_id}"
+        
+        # Check cache in cached_places
+        try:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT data FROM cached_places 
+                WHERE place_id = %s AND cache_expires_at > NOW()
+            """, (cache_key,))
+            result = cursor.fetchone()
+            conn.close()
+            if result:
+                print(f"[YELP CACHE HIT] {business_id}")
+                return json.loads(result['data'])
+        except Exception as e:
+            print(f"[YELP CACHE ERROR] {e}")
+        
+        # Make API request
+        try:
+            response = requests.get(f"{self.BASE_URL}/businesses/{business_id}", 
+                                   headers=self.headers, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                # Save to cache asynchronously (non-blocking)
+                self._save_place_to_cache_async(cache_key, data)
+                return data
+            else:
+                print(f"[YELP API ERROR] {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"[YELP API ERROR] {e}")
+            return None
+    
+    def autocomplete(self, text, latitude=None, longitude=None):
+        """Autocomplete businesses"""
+        cache_key = self._get_cache_key('autocomplete', {
+            'text': text, 'lat': latitude, 'lng': longitude
+        })
+        
+        cached = self._get_from_cache(cache_key)
+        if cached:
+            return cached
+        
+        params = {'text': text}
+        if latitude and longitude:
+            params['latitude'] = latitude
+            params['longitude'] = longitude
+        
+        try:
+            response = requests.get(f"{self.BASE_URL}/autocomplete", 
+                                   headers=self.headers, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                self._save_to_cache(cache_key, data)
+                return data
+            return None
+        except Exception as e:
+            print(f"[YELP AUTOCOMPLETE ERROR] {e}")
+            return None
+
+
+class OpenTripMapClient:
+    """Wrapper for OpenTripMap API with MySQL caching"""
+    
+    BASE_URL = "https://api.opentripmap.com/0.1/en/places"
+    CACHE_EXPIRY_DAYS = 7  # Cache for 7 days for performance
+    
+    def __init__(self, api_key, db_config):
+        self.api_key = api_key
+        self.db_config = db_config
+    
+    def _get_cache_key(self, method, params):
+        """Generate cache key from method and params"""
+        param_str = json.dumps(params, sort_keys=True)
+        cache_key = f"otm:{method}:{hashlib.md5(param_str.encode()).hexdigest()}"
+        print(f"[OTM CACHE KEY] {cache_key} <- {param_str[:100]}")  # Debug: show cache key
+        return cache_key
+    
+    def _get_from_cache(self, cache_key):
+        """Retrieve from cached_searches table"""
+        try:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT data FROM cached_searches 
+                WHERE cache_key = %s AND cache_expires_at > NOW()
+            """, (cache_key,))
+            result = cursor.fetchone()
+            conn.close()
+            if result:
+                print(f"[OTM CACHE HIT] {cache_key}")
+                return json.loads(result['data'])
+            return None
+        except Exception as e:
+            print(f"[OTM CACHE ERROR] {e}")
+            return None
+    
+    def _save_to_cache(self, cache_key, data):
+        """Save to cached_searches table"""
+        try:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor()
+            expires_at = datetime.now() + timedelta(days=self.CACHE_EXPIRY_DAYS)
+            cursor.execute("""
+                INSERT INTO cached_searches (cache_key, data, cache_expires_at)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    data = VALUES(data), 
+                    cache_expires_at = VALUES(cache_expires_at),
+                    cache_created_at = NOW()
+            """, (cache_key, json.dumps(data), expires_at))
+            conn.commit()
+            conn.close()
+            print(f"[OTM CACHE SAVE] {cache_key}")
+        except Exception as e:
+            print(f"[OTM CACHE SAVE ERROR] {e}")
+    
+    def _save_to_cache_async(self, cache_key, data):
+        """Save to cache in background thread (non-blocking)"""
+        def save():
+            self._save_to_cache(cache_key, data)
+        
+        thread = threading.Thread(target=save, daemon=True)
+        thread.start()
+    
+    def search_radius(self, latitude, longitude, radius=5000, kinds=None, 
+                     rate=None, limit=50, skip_cache=False):
+        """Search for places within radius"""
+        cache_key = self._get_cache_key('radius', {
+            'lat': latitude, 'lng': longitude, 'radius': radius, 
+            'kinds': kinds, 'rate': rate, 'limit': limit
+        })
+        
+        # Check cache (unless skip_cache is True)
+        if not skip_cache:
+            cached = self._get_from_cache(cache_key)
+            if cached:
+                return cached
+        
+        params = {
+            'apikey': self.api_key,
+            'lat': latitude,
+            'lon': longitude,
+            'radius': radius,
+            'limit': limit,
+            'format': 'json'
+        }
+        if kinds:
+            params['kinds'] = kinds
+        if rate:
+            params['rate'] = rate
+        
+        try:
+            response = requests.get(f"{self.BASE_URL}/radius", 
+                                   params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                # Save to cache asynchronously (non-blocking)
+                self._save_to_cache_async(cache_key, data)
+                return data
+            else:
+                print(f"[OTM API ERROR] {response.status_code}: {response.text}")
+                return None
+        except Exception as e:
+            print(f"[OTM API ERROR] {e}")
+            return None
+    
+    def _save_place_to_cache(self, cache_key, data):
+        """Save place to cached_places table"""
+        try:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor()
+            expires_at = datetime.now() + timedelta(days=self.CACHE_EXPIRY_DAYS)
+            cursor.execute("""
+                INSERT INTO cached_places (place_id, source, data, cache_expires_at)
+                VALUES (%s, 'opentripmap', %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    data = VALUES(data), 
+                    cache_expires_at = VALUES(cache_expires_at)
+            """, (cache_key, json.dumps(data), expires_at))
+            conn.commit()
+            conn.close()
+            print(f"[OTM PLACE CACHE SAVE] {cache_key}")
+        except Exception as e:
+            print(f"[OTM PLACE CACHE SAVE ERROR] {e}")
+    
+    def _save_place_to_cache_async(self, cache_key, data):
+        """Save place to cache in background thread (non-blocking)"""
+        def save():
+            self._save_place_to_cache(cache_key, data)
+        
+        thread = threading.Thread(target=save, daemon=True)
+        thread.start()
+    
+    def get_place(self, xid):
+        """Get place details by xid"""
+        cache_key = f"otm:{xid}"
+        
+        # Check cache in cached_places
+        try:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT data FROM cached_places 
+                WHERE place_id = %s AND cache_expires_at > NOW()
+            """, (cache_key,))
+            result = cursor.fetchone()
+            conn.close()
+            if result:
+                print(f"[OTM CACHE HIT] {xid}")
+                return json.loads(result['data'])
+        except Exception as e:
+            print(f"[OTM CACHE ERROR] {e}")
+        
+        # Make API request
+        try:
+            response = requests.get(f"{self.BASE_URL}/xid/{xid}", 
+                                   params={'apikey': self.api_key}, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                # Save to cache asynchronously (non-blocking)
+                self._save_place_to_cache_async(cache_key, data)
+                return data
+            else:
+                print(f"[OTM API ERROR] {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"[OTM API ERROR] {e}")
+            return None
+
+
+class NominatimClient:
+    """Wrapper for Nominatim (OpenStreetMap) geocoding with caching"""
+    
+    BASE_URL = "https://nominatim.openstreetmap.org"
+    CACHE_EXPIRY_DAYS = 30
+    RATE_LIMIT_DELAY = 1.0  # 1 second between requests
+    
+    def __init__(self, db_config):
+        self.db_config = db_config
+        self.headers = {
+            "User-Agent": "TripSync/1.0 (travel planning app)"
+        }
+        self.last_request_time = 0
+    
+    def _rate_limit(self):
+        """Ensure 1 second delay between requests"""
+        elapsed = time.time() - self.last_request_time
+        if elapsed < self.RATE_LIMIT_DELAY:
+            time.sleep(self.RATE_LIMIT_DELAY - elapsed)
+        self.last_request_time = time.time()
+    
+    def _get_cache_key(self, method, params):
+        """Generate cache key"""
+        param_str = json.dumps(params, sort_keys=True)
+        return f"nominatim:{method}:{hashlib.md5(param_str.encode()).hexdigest()}"
+    
+    def _get_from_cache(self, cache_key):
+        """Retrieve from cached_geocoding table"""
+        try:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT data FROM cached_geocoding 
+                WHERE query = %s AND cache_expires_at > NOW()
+            """, (cache_key,))
+            result = cursor.fetchone()
+            conn.close()
+            if result:
+                print(f"[NOMINATIM CACHE HIT] {cache_key}")
+                return json.loads(result['data'])
+            return None
+        except Exception as e:
+            print(f"[NOMINATIM CACHE ERROR] {e}")
+            return None
+    
+    def _save_to_cache(self, cache_key, data):
+        """Save to cached_geocoding table"""
+        try:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor()
+            expires_at = datetime.now() + timedelta(days=self.CACHE_EXPIRY_DAYS)
+            cursor.execute("""
+                INSERT INTO cached_geocoding (query, data, cache_expires_at)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    data = VALUES(data), 
+                    cache_expires_at = VALUES(cache_expires_at),
+                    cache_created_at = NOW()
+            """, (cache_key, json.dumps(data), expires_at))
+            conn.commit()
+            conn.close()
+            print(f"[NOMINATIM CACHE SAVE] {cache_key}")
+        except Exception as e:
+            print(f"[NOMINATIM CACHE SAVE ERROR] {e}")
+    
+    def search(self, query, limit=10, addressdetails=1):
+        """Search for places"""
+        cache_key = self._get_cache_key('search', {'q': query, 'limit': limit})
+        
+        cached = self._get_from_cache(cache_key)
+        if cached:
+            return cached
+        
+        self._rate_limit()
+        
+        params = {
+            'q': query,
+            'format': 'json',
+            'limit': limit,
+            'addressdetails': addressdetails
+        }
+        
+        try:
+            response = requests.get(f"{self.BASE_URL}/search", 
+                                   headers=self.headers, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                self._save_to_cache(cache_key, data)
+                return data
+            else:
+                print(f"[NOMINATIM API ERROR] {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"[NOMINATIM API ERROR] {e}")
+            return None
+    
+    def reverse(self, latitude, longitude):
+        """Reverse geocode coordinates"""
+        cache_key = self._get_cache_key('reverse', {'lat': latitude, 'lon': longitude})
+        
+        cached = self._get_from_cache(cache_key)
+        if cached:
+            return cached
+        
+        self._rate_limit()
+        
+        params = {
+            'lat': latitude,
+            'lon': longitude,
+            'format': 'json',
+            'addressdetails': 1
+        }
+        
+        try:
+            response = requests.get(f"{self.BASE_URL}/reverse", 
+                                   headers=self.headers, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                self._save_to_cache(cache_key, data)
+                return data
+            return None
+        except Exception as e:
+            print(f"[NOMINATIM API ERROR] {e}")
+            return None
+
+
+class OSRMClient:
+    """Wrapper for OSRM routing/distance with caching and rate limiting"""
+    
+    BASE_URL = "http://router.project-osrm.org"
+    CACHE_EXPIRY_DAYS = 90  # Increased from 30 to 90 days - distances rarely change
+    MIN_REQUEST_INTERVAL = 0.1  # Reduced from 0.2s to 0.1s (max 10 req/sec) - faster with bulk calls
+    
+    def __init__(self, db_config):
+        self.db_config = db_config
+        self.last_request_time = 0
+        import threading
+        self.request_lock = threading.Lock()
+    
+    def _get_from_cache(self, origin_lat, origin_lng, dest_lat, dest_lng):
+        """Retrieve from cached_distances table"""
+        try:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT distance_meters, duration_seconds 
+                FROM cached_distances 
+                WHERE origin_lat = %s AND origin_lng = %s 
+                  AND dest_lat = %s AND dest_lng = %s
+                  AND cache_expires_at > NOW()
+            """, (origin_lat, origin_lng, dest_lat, dest_lng))
+            result = cursor.fetchone()
+            conn.close()
+            if result:
+                print(f"[OSRM CACHE HIT] ({origin_lat},{origin_lng}) -> ({dest_lat},{dest_lng})")
+                return result
+            return None
+        except Exception as e:
+            print(f"[OSRM CACHE ERROR] {e}")
+            return None
+    
+    def _save_to_cache(self, origin_lat, origin_lng, dest_lat, dest_lng, distance, duration):
+        """Save to cached_distances table"""
+        try:
+            conn = mysql.connector.connect(**self.db_config)
+            cursor = conn.cursor()
+            expires_at = datetime.now() + timedelta(days=self.CACHE_EXPIRY_DAYS)
+            cursor.execute("""
+                INSERT INTO cached_distances 
+                (origin_lat, origin_lng, dest_lat, dest_lng, distance_meters, duration_seconds, cache_expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    distance_meters = VALUES(distance_meters),
+                    duration_seconds = VALUES(duration_seconds),
+                    cache_expires_at = VALUES(cache_expires_at),
+                    cache_created_at = NOW()
+            """, (origin_lat, origin_lng, dest_lat, dest_lng, distance, duration, expires_at))
+            conn.commit()
+            conn.close()
+            print(f"[OSRM CACHE SAVE] ({origin_lat},{origin_lng}) -> ({dest_lat},{dest_lng})")
+        except Exception as e:
+            print(f"[OSRM CACHE SAVE ERROR] {e}")
+    
+    def _save_to_cache_async(self, origin_lat, origin_lng, dest_lat, dest_lng, distance, duration):
+        """Save to cache in background thread (non-blocking)"""
+        def save():
+            self._save_to_cache(origin_lat, origin_lng, dest_lat, dest_lng, distance, duration)
+        
+        thread = threading.Thread(target=save, daemon=True)
+        thread.start()
+    
+    def distance_matrix(self, origins, destinations):
+        """Get distance matrix between origins and destinations
+        Args:
+            origins: List of (lat, lng) tuples
+            destinations: List of (lat, lng) tuples
+        Returns:
+            dict with 'distances' and 'durations' matrices
+        """
+        # Check cache for each pair
+        distances = []
+        durations = []
+        uncached_pairs = []
+        
+        for orig in origins:
+            orig_distances = []
+            orig_durations = []
+            for dest in destinations:
+                cached = self._get_from_cache(orig[0], orig[1], dest[0], dest[1])
+                if cached:
+                    orig_distances.append(cached['distance_meters'])
+                    orig_durations.append(cached['duration_seconds'])
+                else:
+                    orig_distances.append(None)
+                    orig_durations.append(None)
+                    uncached_pairs.append((orig, dest))
+            distances.append(orig_distances)
+            durations.append(orig_durations)
+        
+        # Fetch uncached pairs from OSRM - use BULK table API for better performance
+        if uncached_pairs:
+            # OPTIMIZATION: Process up to 25 pairs (increased from 5)
+            # OSRM table service can handle many coordinates in one call
+            limited_pairs = uncached_pairs[:25]
+            
+            try:
+                # OPTIMIZATION: Build ALL coordinates for single bulk API call
+                # Instead of individual calls, send all at once
+                unique_coords = []
+                coord_to_idx = {}
+                
+                for orig, dest in limited_pairs:
+                    if orig not in coord_to_idx:
+                        coord_to_idx[orig] = len(unique_coords)
+                        unique_coords.append(orig)
+                    if dest not in coord_to_idx:
+                        coord_to_idx[dest] = len(unique_coords)
+                        unique_coords.append(dest)
+                
+                # Build coordinate string for OSRM table service
+                # Format: lng,lat;lng,lat;lng,lat...
+                coords_str = ";".join([f"{coord[1]},{coord[0]}" for coord in unique_coords])
+                
+                # OPTIMIZATION: Single bulk API call instead of loop
+                with self.request_lock:
+                    import time
+                    elapsed = time.time() - self.last_request_time
+                    if elapsed < self.MIN_REQUEST_INTERVAL:
+                        time.sleep(self.MIN_REQUEST_INTERVAL - elapsed)
+                    
+                    response = requests.get(
+                        f"{self.BASE_URL}/table/v1/driving/{coords_str}",
+                        params={'annotations': 'distance,duration'},
+                        timeout=15  # Increased timeout for bulk request
+                    )
+                    self.last_request_time = time.time()
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('code') == 'Ok':
+                        # Extract distances and durations from bulk response
+                        bulk_distances = data.get('distances', [])
+                        bulk_durations = data.get('durations', [])
+                        
+                        print(f"[OSRM BULK] Received matrix: {len(bulk_distances)}x{len(bulk_distances[0]) if bulk_distances else 0}")
+                        
+                        # Map results back to original pairs
+                        successful_pairs = 0
+                        for orig, dest in limited_pairs:
+                            orig_idx_in_bulk = coord_to_idx[orig]
+                            dest_idx_in_bulk = coord_to_idx[dest]
+                            
+                            if (orig_idx_in_bulk < len(bulk_distances) and 
+                                dest_idx_in_bulk < len(bulk_distances[orig_idx_in_bulk])):
+                                distance = bulk_distances[orig_idx_in_bulk][dest_idx_in_bulk]
+                                duration = bulk_durations[orig_idx_in_bulk][dest_idx_in_bulk]
+                                
+                                # Skip null/None values (unreachable locations)
+                                if distance is not None and duration is not None:
+                                    # Update matrix
+                                    orig_idx = origins.index(orig)
+                                    dest_idx = destinations.index(dest)
+                                    distances[orig_idx][dest_idx] = distance
+                                    durations[orig_idx][dest_idx] = duration
+                                    
+                                    # Cache it asynchronously (non-blocking)
+                                    self._save_to_cache_async(orig[0], orig[1], dest[0], dest[1], 
+                                                             int(distance), int(duration))
+                                    successful_pairs += 1
+                                else:
+                                    print(f"[OSRM BULK] Null distance for pair ({orig[0]:.4f},{orig[1]:.4f}) -> ({dest[0]:.4f},{dest[1]:.4f})")
+                        
+                        print(f"[OSRM BULK] Successfully calculated {successful_pairs}/{len(limited_pairs)} pairs in one call")
+                elif response.status_code == 429:
+                    print(f"[OSRM RATE LIMIT] Using haversine fallback for uncached pairs")
+                    # Rate limited - use haversine fallback for all uncached
+                    for orig, dest in limited_pairs:
+                        orig_idx = origins.index(orig)
+                        dest_idx = destinations.index(dest)
+                        fallback_dist = self._haversine_distance(orig[0], orig[1], dest[0], dest[1])
+                        distances[orig_idx][dest_idx] = fallback_dist
+                        durations[orig_idx][dest_idx] = fallback_dist / 13.89
+                else:
+                    print(f"[OSRM API ERROR] {response.status_code}")
+                    # Use haversine fallback
+                    for orig, dest in limited_pairs:
+                        orig_idx = origins.index(orig)
+                        dest_idx = destinations.index(dest)
+                        fallback_dist = self._haversine_distance(orig[0], orig[1], dest[0], dest[1])
+                        distances[orig_idx][dest_idx] = fallback_dist
+                        durations[orig_idx][dest_idx] = fallback_dist / 13.89
+            except Exception as e:
+                print(f"[OSRM BULK ERROR] {e}")
+                # Fallback to haversine for errors
+                for orig, dest in limited_pairs:
+                    try:
+                        orig_idx = origins.index(orig)
+                        dest_idx = destinations.index(dest)
+                        fallback_dist = self._haversine_distance(orig[0], orig[1], dest[0], dest[1])
+                        distances[orig_idx][dest_idx] = fallback_dist
+                        durations[orig_idx][dest_idx] = fallback_dist / 13.89
+                    except:
+                        pass
+        
+        return {
+            'distances': distances,
+            'durations': durations
+        }
+    
+    def _haversine_distance(self, lat1, lon1, lat2, lon2):
+        """Calculate straight-line distance between two points (fallback when OSRM fails)"""
+        from math import radians, sin, cos, sqrt, atan2
+        
+        R = 6371000  # Earth radius in meters
+        
+        lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * atan2(sqrt(a), sqrt(1-a))
+        distance = R * c
+        
+        return distance
+
+
+# Initialize API clients
+yelp_client = None
+otm_client = None
+nominatim_client = None
+osrm_client = None
+
+if YELP_API_KEY:
+    yelp_client = YelpClient(YELP_API_KEY, db_config)
+    print("[OK] Yelp client initialized")
 else:
-    print("WARNING: Google Places API key not found!")
+    print("WARNING: YELP_API_KEY not found!")
+
+if OPEN_TRIP_MAP_API_KEY:
+    otm_client = OpenTripMapClient(OPEN_TRIP_MAP_API_KEY, db_config)
+    print("[OK] OpenTripMap client initialized")
+else:
+    print("WARNING: OPEN_TRIP_MAP_API_KEY not found!")
+
+nominatim_client = NominatimClient(db_config)
+print("[OK] Nominatim client initialized")
+
+osrm_client = OSRMClient(db_config)
+print("[OK] OSRM client initialized")
+
+# ============================================================================
+# END API CLIENT CLASSES
+# ============================================================================
 
 # Authentication routes
 @app.route('/api/register', methods=['POST'])
@@ -596,6 +1359,23 @@ def get_chat_messages(chat_id):
         if not cursor.fetchone():
             return jsonify({"error": "Access denied"}), 403
         
+        # Try to get trip info (may not exist for all chats)
+        trip_name = 'Group Chat'  # Default
+        try:
+            cursor.execute("""
+                SELECT t.trip_name
+                FROM group_chats gc
+                JOIN trips t ON gc.trip_id = t.trip_id
+                WHERE gc.chat_id = %s
+            """, (chat_id,))
+            
+            trip_info = cursor.fetchone()
+            if trip_info and trip_info.get('trip_name'):
+                trip_name = trip_info['trip_name']
+        except Exception as trip_error:
+            print(f"Warning: Could not fetch trip name for chat {chat_id}: {trip_error}", flush=True)
+            # Continue with default trip_name
+        
         # Get messages
         cursor.execute("""
             SELECT 
@@ -621,16 +1401,32 @@ def get_chat_messages(chat_id):
         """, (user_id, chat_id))
         conn.commit()
         
-        # Convert datetime to string
+        # Convert datetime to string and map fields for frontend compatibility
         for msg in messages:
             if msg.get('sent_at'):
                 msg['sent_at'] = msg['sent_at'].isoformat() if hasattr(msg['sent_at'], 'isoformat') else str(msg['sent_at'])
+            # Map backend fields to frontend expected fields (keep both old and new field names)
+            msg['message'] = msg.get('message_content', '')
+            msg['user_id'] = msg.get('sender_id', None)
+            if 'sender_first_name' in msg:
+                msg['first_name'] = msg['sender_first_name']
+            if 'sender_last_name' in msg:
+                msg['last_name'] = msg['sender_last_name']
         
-        return jsonify({"messages": messages}), 200
+        return jsonify({
+            "messages": messages,
+            "chat_name": trip_name,
+            "chat_info": {
+                "chat_name": trip_name,
+                "trip_name": trip_name
+            }
+        }), 200
         
     except Exception as e:
-        print(f"Error in get_chat_messages: {e}")
-        return jsonify({"error": "Database error"}), 500
+        print(f"Error in get_chat_messages: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
     finally:
         if conn:
             conn.close()
@@ -835,14 +1631,30 @@ def get_direct_messages(chat_id):
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor(dictionary=True)
         
-        # Verify user is part of this direct chat
+        # Verify user is part of this direct chat and get other user's info
         cursor.execute("""
-            SELECT 1 FROM direct_chats 
-            WHERE chat_id = %s AND (user1_id = %s OR user2_id = %s)
+            SELECT 
+                dc.user1_id,
+                dc.user2_id,
+                u1.first_name as user1_first_name,
+                u1.last_name as user1_last_name,
+                u2.first_name as user2_first_name,
+                u2.last_name as user2_last_name
+            FROM direct_chats dc
+            JOIN users u1 ON dc.user1_id = u1.user_id
+            JOIN users u2 ON dc.user2_id = u2.user_id
+            WHERE dc.chat_id = %s AND (dc.user1_id = %s OR dc.user2_id = %s)
         """, (chat_id, user_id, user_id))
         
-        if not cursor.fetchone():
+        chat_info = cursor.fetchone()
+        if not chat_info:
             return jsonify({"error": "Access denied"}), 403
+        
+        # Determine the other user's name
+        if int(user_id) == chat_info['user1_id']:
+            other_user_name = f"{chat_info['user2_first_name']} {chat_info['user2_last_name']}"
+        else:
+            other_user_name = f"{chat_info['user1_first_name']} {chat_info['user1_last_name']}"
         
         # Get messages
         cursor.execute("""
@@ -869,12 +1681,26 @@ def get_direct_messages(chat_id):
         """, (user_id, chat_id))
         conn.commit()
         
-        # Convert datetime to string
+        # Convert datetime to string and map fields for frontend compatibility
         for msg in messages:
             if msg.get('sent_at'):
                 msg['sent_at'] = msg['sent_at'].isoformat()
+            # Map backend fields to frontend expected fields (keep both old and new field names)
+            msg['message'] = msg.get('message_content', '')
+            msg['user_id'] = msg.get('sender_id', None)
+            if 'sender_first_name' in msg:
+                msg['first_name'] = msg['sender_first_name']
+            if 'sender_last_name' in msg:
+                msg['last_name'] = msg['sender_last_name']
         
-        return jsonify({"messages": messages}), 200
+        return jsonify({
+            "messages": messages,
+            "chat_name": other_user_name,
+            "chat_info": {
+                "chat_name": other_user_name,
+                "trip_name": other_user_name
+            }
+        }), 200
         
     except Exception as e:
         print(f"Error fetching direct messages: {e}")
@@ -1059,48 +1885,106 @@ def send_chat_message(chat_id):
 # Google Places API routes
 @app.route('/api/autocomplete', methods=['GET'])
 def autocomplete():
-    """Autocomplete for place search"""
-    if not gmaps:
-        return jsonify({"error": "Google Places API is not configured"}), 500
-    
+    """Autocomplete for place search - Hybrid Nominatim + Yelp"""
     query = request.args.get('query', '')
-    if not query:
+    if not query or len(query) < 2:
         return jsonify([]), 200
     
     try:
-        result = gmaps.places_autocomplete(query)
-        suggestions = [
-            {
-                'description': place['description'],
-                'place_id': place['place_id']
-            }
-            for place in result
-        ]
-        return jsonify(suggestions), 200
+        suggestions = []
+        seen_descriptions = set()
+        
+        # 1. Get location suggestions from Nominatim
+        if nominatim_client:
+            try:
+                nominatim_results = nominatim_client.search(query, limit=5)
+                if nominatim_results:
+                    for place in nominatim_results:
+                        description = place.get('display_name', '')
+                        if description and description not in seen_descriptions:
+                            suggestions.append({
+                                'description': description,
+                                'place_id': f"nominatim:{place.get('place_id', '')}"
+                            })
+                            seen_descriptions.add(description)
+            except Exception as e:
+                print(f"[AUTOCOMPLETE] Nominatim error: {e}")
+        
+        # 2. Get business suggestions from Yelp
+        if yelp_client:
+            try:
+                yelp_results = yelp_client.autocomplete(query)
+                if yelp_results and 'businesses' in yelp_results:
+                    for business in yelp_results['businesses'][:5]:
+                        name = business.get('name', '')
+                        location = business.get('location', {})
+                        city = location.get('city', '')
+                        state = location.get('state', '')
+                        description = f"{name}, {city}, {state}" if city else name
+                        
+                        if description and description not in seen_descriptions:
+                            suggestions.append({
+                                'description': description,
+                                'place_id': f"yelp:{business.get('id', '')}"
+                            })
+                            seen_descriptions.add(description)
+            except Exception as e:
+                print(f"[AUTOCOMPLETE] Yelp error: {e}")
+        
+        return jsonify(suggestions[:10]), 200  # Limit to 10 total results
     except Exception as e:
         print("Error in autocomplete:", e)
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/autocomplete/places', methods=['GET'])
 def autocomplete_places():
-    """Autocomplete for any place (cities, addresses, landmarks, etc.)"""
-    if not gmaps:
-        return jsonify({"error": "Google Places API is not configured"}), 500
-    
+    """Autocomplete for any place (cities, addresses, landmarks, etc.) - Hybrid Nominatim + Yelp"""
     query = request.args.get('query', '')
-    if not query:
+    if not query or len(query) < 2:
         return jsonify([]), 200
     
     try:
-        result = gmaps.places_autocomplete(query)
-        suggestions = [
-            {
-                'description': place['description'],
-                'place_id': place['place_id']
-            }
-            for place in result
-        ]
-        return jsonify(suggestions), 200
+        suggestions = []
+        seen_descriptions = set()
+        
+        # 1. Get location suggestions from Nominatim (cities, addresses, landmarks)
+        if nominatim_client:
+            try:
+                nominatim_results = nominatim_client.search(query, limit=8)
+                if nominatim_results:
+                    for place in nominatim_results:
+                        description = place.get('display_name', '')
+                        if description and description not in seen_descriptions:
+                            suggestions.append({
+                                'description': description,
+                                'place_id': f"nominatim:{place.get('place_id', '')}"
+                            })
+                            seen_descriptions.add(description)
+            except Exception as e:
+                print(f"[PLACES AUTOCOMPLETE] Nominatim error: {e}")
+        
+        # 2. Get business suggestions from Yelp
+        if yelp_client:
+            try:
+                yelp_results = yelp_client.autocomplete(query)
+                if yelp_results and 'businesses' in yelp_results:
+                    for business in yelp_results['businesses'][:5]:
+                        name = business.get('name', '')
+                        location = business.get('location', {})
+                        city = location.get('city', '')
+                        state = location.get('state', '')
+                        description = f"{name}, {city}, {state}" if city else name
+                        
+                        if description and description not in seen_descriptions:
+                            suggestions.append({
+                                'description': description,
+                                'place_id': f"yelp:{business.get('id', '')}"
+                            })
+                            seen_descriptions.add(description)
+            except Exception as e:
+                print(f"[PLACES AUTOCOMPLETE] Yelp error: {e}")
+        
+        return jsonify(suggestions[:12]), 200  # Return up to 12 results
     except Exception as e:
         print("Error in places autocomplete:", e)
         import traceback
@@ -1109,30 +1993,192 @@ def autocomplete_places():
 
 @app.route('/api/autocomplete/cities', methods=['GET'])
 def autocomplete_cities():
-    """Autocomplete specifically for cities"""
-    if not gmaps:
-        return jsonify({"error": "Google Places API is not configured"}), 500
-    
+    """Autocomplete specifically for cities - Using Nominatim"""
     query = request.args.get('query', '')
-    if not query:
+    if not query or len(query) < 2:
         return jsonify([]), 200
     
     try:
-        result = gmaps.places_autocomplete(
-            query,
-            types=['(cities)']
-        )
-        suggestions = [
-            {
-                'description': place['description'],
-                'place_id': place['place_id']
-            }
-            for place in result
-        ]
-        return jsonify(suggestions), 200
+        suggestions = []
+        
+        # Use Nominatim to search for cities specifically
+        if nominatim_client:
+            try:
+                nominatim_results = nominatim_client.search(query, limit=10)
+                if nominatim_results:
+                    for place in nominatim_results:
+                        # Filter for cities, towns, villages
+                        place_type = place.get('type', '').lower()
+                        osm_type = place.get('osm_type', '')
+                        address = place.get('address', {})
+                        
+                        # Check if it's a city-type location
+                        is_city = (place_type in ['city', 'town', 'village', 'municipality'] or 
+                                  'city' in address or 'town' in address or 
+                                  place.get('class') == 'place')
+                        
+                        if is_city or osm_type in ['relation', 'node']:
+                            description = place.get('display_name', '')
+                            if description:
+                                suggestions.append({
+                                    'description': description,
+                                    'place_id': f"nominatim:{place.get('place_id', '')}"
+                                })
+            except Exception as e:
+                print(f"[CITY AUTOCOMPLETE] Nominatim error: {e}")
+        
+        return jsonify(suggestions[:10]), 200
     except Exception as e:
         print("Error in city autocomplete:", e)
         return jsonify({"error": str(e)}), 500
+
+# ============================================================================
+# HELPER FUNCTIONS FOR HYBRID SEARCH
+# ============================================================================
+
+def map_category_to_apis(category_or_type):
+    """Map frontend category to appropriate API(s) and search terms
+    Returns: {'primary': 'yelp'|'otm', 'yelp_category': str, 'otm_kinds': str}
+    """
+    category_lower = category_or_type.lower()
+    
+    # Business-focused categories -> Yelp primary
+    yelp_primary = {
+        'restaurants': {'yelp': 'restaurants', 'otm': 'foods'},
+        'hotels': {'yelp': 'hotels', 'otm': 'accomodations'},
+        'cafes': {'yelp': 'cafes', 'otm': 'foods'},
+        'bars': {'yelp': 'bars', 'otm': None},
+        'nightlife': {'yelp': 'nightlife', 'otm': None},
+        'shopping': {'yelp': 'shopping', 'otm': None},
+        'spas': {'yelp': 'spas', 'otm': None},
+        'gyms': {'yelp': 'gyms', 'otm': None},
+        'bakeries': {'yelp': 'bakeries', 'otm': 'foods'},
+    }
+    
+    # Attraction-focused categories -> OpenTripMap primary
+    otm_primary = {
+        'museums': {'yelp': 'museums', 'otm': 'museums'},
+        'parks': {'yelp': None, 'otm': 'natural'},  # FIXED: Don't use Yelp for parks (returns restaurants)
+        'park': {'yelp': None, 'otm': 'natural'},  # NEW: Singular form
+        'attractions': {'yelp': None, 'otm': 'tourist_facilities,interesting_places'},  # FIXED: OTM only
+        'attraction': {'yelp': None, 'otm': 'tourist_facilities,interesting_places'},  # NEW: Singular
+        'tourist_attraction': {'yelp': None, 'otm': 'tourist_facilities,cultural,historic'},  # NEW
+        'landmarks': {'yelp': None, 'otm': 'interesting_places,cultural,historic'},  # FIXED: OTM only
+        'landmark': {'yelp': None, 'otm': 'interesting_places,cultural,historic'},  # NEW: Singular
+        'beaches': {'yelp': None, 'otm': 'beaches'},  # FIXED: OTM only for natural beaches
+        'beach': {'yelp': None, 'otm': 'beaches'},  # NEW: Singular
+        'trails': {'yelp': None, 'otm': 'natural'},
+        'hikes': {'yelp': None, 'otm': 'natural'},  # NEW
+        'hiking': {'yelp': None, 'otm': 'natural'},  # NEW
+        'nature': {'yelp': None, 'otm': 'natural'},  # NEW
+        'galleries': {'yelp': 'galleries', 'otm': 'cultural,museums'},
+        'stadiums': {'yelp': 'stadiums', 'otm': 'sport'},
+        'theaters': {'yelp': 'theater', 'otm': 'theatres_and_entertainments'},
+        'zoos': {'yelp': 'zoos', 'otm': 'interesting_places'},
+        'entertainment': {'yelp': 'entertainment', 'otm': 'amusements,theatres_and_entertainments'},
+    }
+    
+    # Check if it matches a known category
+    for cat, apis in yelp_primary.items():
+        if cat in category_lower:
+            return {'primary': 'yelp', 'yelp_category': apis['yelp'], 'otm_kinds': apis['otm']}
+    
+    for cat, apis in otm_primary.items():
+        if cat in category_lower:
+            return {'primary': 'otm', 'yelp_category': apis['yelp'], 'otm_kinds': apis['otm']}
+    
+    # Default: try both with generic search
+    return {'primary': 'both', 'yelp_category': category_or_type, 'otm_kinds': 'interesting_places'}
+
+
+def normalize_yelp_place(business, source='yelp'):
+    """Convert Yelp business to unified format"""
+    location = business.get('location', {})
+    coordinates = business.get('coordinates', {})
+    
+    # Get photo URLs
+    # Search endpoint returns 'image_url' (single), business details returns 'photos' (array of 3)
+    photos = []
+    if 'photos' in business and isinstance(business['photos'], list):
+        # Business details endpoint - has photos array
+        photos = business['photos'][:3]  # Yelp provides up to 3 photos
+    elif business.get('image_url'):
+        # Search endpoint - only has single image_url
+        photos = [business['image_url']]
+    
+    photo_url = photos[0] if photos else ''
+    
+    # Calculate popularity score (rating * review_count for sorting)
+    rating = business.get('rating', 0)
+    review_count = business.get('review_count', 0)
+    popularity = rating * review_count
+    
+    # Extract category titles from category objects
+    categories = business.get('categories', [])
+    category_titles = [cat.get('title', '') for cat in categories if isinstance(cat, dict)]
+    category_str = ', '.join(category_titles[0:2]) if category_titles else 'Business'
+    
+    return {
+        'place_id': f"yelp:{business.get('id', '')}",
+        'place_name': business.get('name', ''),
+        'address': location.get('address1', ''),
+        'city_name': location.get('city', ''),
+        'category': category_str,
+        'image_url': photo_url,
+        'photos': photos,  # Array of photos for carousel (1 for search, up to 3 for details)
+        'rating': str(rating),
+        'lat': coordinates.get('latitude'),
+        'lng': coordinates.get('longitude'),
+        'source': source,
+        'popularity': popularity,
+        'review_count': review_count
+    }
+
+
+def normalize_otm_place(place, source='opentripmap'):
+    """Convert OpenTripMap place to unified format"""
+    # Get place name
+    name = place.get('name', 'Unknown Place')
+    
+    # Get coordinates
+    point = place.get('point', {})
+    lat = point.get('lat')
+    lon = point.get('lon')
+    
+    # Get kinds/category
+    kinds = place.get('kinds', '')
+    category = kinds.split(',')[0].replace('_', ' ').title() if kinds else 'Attraction'
+    
+    # Rate is popularity metric (1-7 scale, with 7 being most notable)
+    rate = place.get('rate', 0)
+    
+    # Get photo URL(s)
+    # Search results have 'preview' with single image
+    # Full details have 'image' URL and optionally 'wikipedia_extracts' with images
+    photos = []
+    if place.get('image'):
+        photos.append(place['image'])
+    elif place.get('preview', {}).get('source'):
+        photos.append(place['preview']['source'])
+    
+    photo_url = photos[0] if photos else ''
+    
+    return {
+        'place_id': f"otm:{place.get('xid', '')}",
+        'place_name': name,
+        'address': '',  # OTM doesn't provide detailed addresses
+        'city_name': '',
+        'category': category,
+        'image_url': photo_url,
+        'photos': photos,  # Array of photos (usually just 1 for OTM)
+        'rating': str(min(5.0, rate)),  # Convert rate (1-7) to rating (1-5)
+        'lat': lat,
+        'lng': lon,
+        'source': source,
+        'popularity': rate * 10,  # Normalize rate to be comparable with Yelp
+        'rate': rate
+    }
+
 
 def normalize_search_term(term):
     """Normalize search terms to improve Google Places API results.
@@ -1190,173 +2236,140 @@ def normalize_search_term(term):
 
 @app.route('/api/search', methods=['GET'])
 def search_places():
-    """Search for places using Google Places API with pagination support via next_page_token"""
-    if not gmaps:
-        return jsonify({"error": "Google Places API is not configured"}), 500
-    
+    """Hybrid search using Yelp Fusion + OpenTripMap with popularity sorting"""
     # Get query parameters
     place_type = request.args.get('place_type', '')
-    category = request.args.get('categories', '')
+    categories_param = request.args.get('categories', '')
     city = request.args.get('city', '')
     state = request.args.get('state', '')
     country = request.args.get('country', 'USA')
-    page_token = request.args.get('page_token', None)  # Get next_page_token from frontend
+    offset = int(request.args.get('offset', 0))
     
-    print(f"📥 Received params - place_type: '{place_type}', city: '{city}', state: '{state}')")
+    print(f"📥 [HYBRID SEARCH] place_type: '{place_type}', city: '{city}', state: '{state}', categories: '{categories_param}'")
     
-    # Build location string
-    location_parts = [part for part in [city, state, country] if part]
-    location = ', '.join(location_parts) if location_parts else None
+    # Determine search term (place_type or categories)
+    search_term = place_type or categories_param
     
-    if not location and not place_type and not page_token:
-        return jsonify({"error": "Either location or place_type is required"}), 400
+    if not search_term and not city:
+        return jsonify({"error": "Either search term or location is required"}), 400
     
     try:
-        # If we have a page_token, use it to get the next page
-        if page_token:
-            print(f"🔄 Fetching next page using token: {page_token[:30]}...")
+        all_places = []
+        
+        # Build location string for Yelp
+        location_parts = [part for part in [city, state, country] if part]
+        location_str = ', '.join(location_parts) if location_parts else None
+        
+        # Get coordinates for OpenTripMap (if we have a location)
+        lat, lng = None, None
+        if city and nominatim_client:
             try:
-                # When using page_token, we don't need to pass query parameter
-                results = gmaps.places(query='', page_token=page_token)
-                print(f"✅ Successfully fetched next page")
-            except Exception as token_error:
-                print(f"❌ Error using page token: {str(token_error)}")
-                return jsonify({"error": f"Failed to fetch next page: {str(token_error)}"}), 500
-        else:
-            # Build search query - handle both singular and plural variations
-            search_parts = []
-            
-            if place_type:
-                # Normalize common singular terms to plural for better results
-                normalized_place_type = normalize_search_term(place_type)
-                if normalized_place_type != place_type:
-                    print(f"🔄 Normalized '{place_type}' → '{normalized_place_type}'")
-                search_parts.append(normalized_place_type)
-            
-            if category:
-                search_parts.append(category)
-            
-            # Build the search query
-            if len(search_parts) > 1:
-                search_query = f"{' '.join(search_parts)}"
-            elif len(search_parts) == 1:
-                search_query = search_parts[0]
-            else:
-                search_query = ""
-            
-            # If we have a location, add it to the query
-            if location:
-                search_query = f"{search_query} in {location}" if search_query else location
-            
-            print(f"🔍 Searching for: {search_query}")
-            
-            # Perform text search
-            results = gmaps.places(query=search_query)
-        
-        # Log what Google returned
-        initial_count = len(results.get('results', []))
-        print(f"📍 Google returned {initial_count} initial results")
-        print(f"📍 Processing {initial_count} search results")
-        
-        formatted_places = []
-        
-        for idx, place in enumerate(results.get('results', []), 1):
-            try:
-                place_id = place.get('place_id')
-                place_name = place.get('name', 'Unknown')
-                print(f"Processing place {idx}: {place_name} - {place_id}")
-                
-                # Get photo URL from initial result
-                photo_url = None
-                photos = place.get('photos')
-                if photos and len(photos) > 0:
-                    photo_reference = photos[0].get('photo_reference')
-                    if photo_reference:
-                        photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
-                
-                # Try to get detailed place information, but use basic info if it fails
-                try:
-                    details = gmaps.place(place_id=place_id, fields=[
-                        'name', 'formatted_address', 'geometry', 
-                        'rating', 'type', 'url'
-                    ])
-                    
-                    if details['status'] == 'OK':
-                        result_data = details['result']
-                        
-                        # Get place type and convert to category
-                        place_types = result_data.get('types', place.get('types', []))
-                        if isinstance(place_types, str):
-                            place_types = [place_types]
-                        
-                        formatted_place = {
-                            'place_id': place_id,
-                            'place_name': result_data.get('name', place_name),
-                            'address': result_data.get('formatted_address', place.get('vicinity', '')),
-                            'city_name': city.split(',')[0] if city else extract_city_from_address(result_data.get('formatted_address', '')),
-                            'category': extract_category_from_types(place_types),
-                            'image_url': photo_url,
-                            'rating': str(result_data.get('rating', place.get('rating', '4.5'))),
-                            'google_maps_url': result_data.get('url', ''),
-                            'lat': result_data.get('geometry', {}).get('location', {}).get('lat') or place.get('geometry', {}).get('location', {}).get('lat'),
-                            'lng': result_data.get('geometry', {}).get('location', {}).get('lng') or place.get('geometry', {}).get('location', {}).get('lng')
-                        }
-                        formatted_places.append(formatted_place)
-                        print(f"  ✅ Successfully processed {place_name}")
-                    else:
-                        print(f"  ⚠️ Details status not OK for {place_name}: {details['status']}, using basic info")
-                        # Fall back to basic info from initial result
-                        place_types = place.get('types', [])
-                        formatted_place = {
-                            'place_id': place_id,
-                            'place_name': place_name,
-                            'address': place.get('vicinity', ''),
-                            'city_name': city.split(',')[0] if city else '',
-                            'category': extract_category_from_types(place_types),
-                            'image_url': photo_url,
-                            'rating': str(place.get('rating', '4.5')),
-                            'google_maps_url': f"https://www.google.com/maps/place/?q=place_id:{place_id}",
-                            'lat': place.get('geometry', {}).get('location', {}).get('lat'),
-                            'lng': place.get('geometry', {}).get('location', {}).get('lng')
-                        }
-                        formatted_places.append(formatted_place)
-                        
-                except Exception as e:
-                    print(f"  ❌ Error fetching details for {place_name}: {e}, using basic info")
-                    # Use basic info from initial search result as fallback
-                    place_types = place.get('types', [])
-                    formatted_place = {
-                        'place_id': place_id,
-                        'place_name': place_name,
-                        'address': place.get('vicinity', ''),
-                        'city_name': city.split(',')[0] if city else '',
-                        'category': extract_category_from_types(place_types),
-                        'image_url': photo_url,
-                        'rating': str(place.get('rating', '4.5')),
-                        'google_maps_url': f"https://www.google.com/maps/place/?q=place_id:{place_id}",
-                        'lat': place.get('geometry', {}).get('location', {}).get('lat'),
-                        'lng': place.get('geometry', {}).get('location', {}).get('lng')
-                    }
-                    formatted_places.append(formatted_place)
-            
+                geocode_query = f"{city}, {state}" if state else city
+                geocode_results = nominatim_client.search(geocode_query, limit=1)
+                if geocode_results and len(geocode_results) > 0:
+                    lat = float(geocode_results[0].get('lat'))
+                    lng = float(geocode_results[0].get('lon'))
+                    print(f"[INFO] Geocoded '{geocode_query}' to ({lat}, {lng})")
             except Exception as e:
-                print(f"  ❌ Critical error processing place: {e}")
-                continue
+                print(f"[WARN] Geocoding error: {e}")
         
-        # Get next_page_token for loading more results
-        next_page_token = results.get('next_page_token')
+        # Map category to determine which APIs to use
+        api_config = map_category_to_apis(search_term) if search_term else {'primary': 'both', 'yelp_category': None, 'otm_kinds': 'interesting_places'}
+        print(f"[STRATEGY] API Strategy: {api_config['primary']} - Yelp: {api_config['yelp_category']}, OTM: {api_config['otm_kinds']}")
         
-        print(f"✅ Returning {len(formatted_places)} places, next_page_token: {'Yes' if next_page_token else 'No'}")
+        # Query Yelp if appropriate
+        if api_config['primary'] in ['yelp', 'both'] and yelp_client and api_config['yelp_category']:
+            try:
+                yelp_params = {
+                    'limit': 20,
+                    'offset': offset,
+                    'sort_by': 'rating'  # Sort by rating for popular places
+                }
+                
+                if location_str:
+                    yelp_params['location'] = location_str
+                elif lat and lng:
+                    yelp_params['latitude'] = lat
+                    yelp_params['longitude'] = lng
+                
+                # Use category or term
+                if api_config['yelp_category']:
+                    yelp_params['categories'] = api_config['yelp_category']
+                else:
+                    yelp_params['term'] = search_term
+                
+                yelp_results = yelp_client.search(**yelp_params)
+                
+                if yelp_results and 'businesses' in yelp_results:
+                    for business in yelp_results['businesses']:
+                        try:
+                            place = normalize_yelp_place(business)
+                            # Only add if it has required fields
+                            if place.get('lat') and place.get('lng'):
+                                all_places.append(place)
+                        except Exception as e:
+                            print(f"[WARN] Error normalizing Yelp business: {e}")
+                    
+                    print(f"[OK] Yelp returned {len(yelp_results['businesses'])} businesses")
+            except Exception as e:
+                print(f"[ERROR] Yelp search error: {e}")
+        
+        # Query OpenTripMap if appropriate
+        if api_config['primary'] in ['otm', 'both'] and otm_client and api_config['otm_kinds'] and lat and lng:
+            try:
+                # Search with larger radius and filter by rate (popularity)
+                otm_results = otm_client.search_radius(
+                    latitude=lat,
+                    longitude=lng,
+                    radius=10000,  # 10km radius
+                    kinds=api_config['otm_kinds'],
+                    rate=3,  # Minimum rate of 3 (moderately notable)
+                    limit=20
+                )
+                
+                if otm_results and isinstance(otm_results, list):
+                    for place in otm_results:
+                        try:
+                            # Filter out places without names
+                            if place.get('name'):
+                                normalized = normalize_otm_place(place)
+                                # Fill in city if we have it
+                                if city:
+                                    normalized['city_name'] = city
+                                all_places.append(normalized)
+                        except Exception as e:
+                            print(f"[WARN] Error normalizing OTM place: {e}")
+                    
+                    print(f"[OK] OpenTripMap returned {len(otm_results)} places")
+            except Exception as e:
+                print(f"[ERROR] OpenTripMap search error: {e}")
+        
+        # Sort by popularity (highest first)
+        all_places.sort(key=lambda x: x.get('popularity', 0), reverse=True)
+        
+        # Remove temporary sorting fields and ensure photo fallback
+        for place in all_places:
+            place.pop('popularity', None)
+            place.pop('review_count', None)
+            place.pop('rate', None)
+            
+            # Ensure image_url has a fallback
+            if not place.get('image_url'):
+                place['image_url'] = 'https://via.placeholder.com/400x250/1a1a2e/6366f1?text=No+Image'
+        
+        print(f"[OK] Returning {len(all_places)} total places (sorted by popularity)")
         
         return jsonify({
-            'places': formatted_places,
-            'total': len(formatted_places),
-            'next_page_token': next_page_token,
-            'has_more': next_page_token is not None
+            'places': all_places,
+            'total': len(all_places),
+            'next_page_token': None,  # Hybrid API doesn't support traditional pagination
+            'has_more': False
         }), 200
         
     except Exception as e:
-        print("Error in place search:", e)
+        print(f"[ERROR] Error in hybrid search: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 def extract_city_from_address(address):
@@ -1371,9 +2384,8 @@ def extract_city_from_address(address):
 
 @app.route('/api/search/city', methods=['GET'])
 def search_places_in_city():
-    """Search for places in a specific city using Google Places API"""
-    if not gmaps:
-        return jsonify({"error": "Google Places API is not configured"}), 500
+    """Search for places in a specific city - DEPRECATED: Use /api/search instead"""
+    return jsonify({"error": "This endpoint is deprecated. Use /api/search instead"}), 410
     
     # Get query parameters
     city_name = request.args.get('city', '')
@@ -1520,9 +2532,8 @@ def is_location_match(address, city=None, state=None):
 
 @app.route('/api/search/advanced', methods=['GET'])
 def advanced_search():
-    """Advanced search with city/state filtering using Google Places API"""
-    if not gmaps:
-        return jsonify({"error": "Google Places API is not configured"}), 500
+    """Advanced search - DEPRECATED: Use /api/search instead"""
+    return jsonify({"error": "This endpoint is deprecated. Use /api/search instead"}), 410
     
     # Get query parameters
     place_type = request.args.get('place_type', '')
@@ -1636,99 +2647,115 @@ def advanced_search():
 
 @app.route('/api/search/nearby', methods=['GET'])
 def search_nearby():
-    """Search for places near a location"""
-    if not gmaps:
-        return jsonify({"error": "Google Places API is not configured"}), 500
-    
+    """Hybrid search for POPULAR places near a location (not just nearest)"""
     lat = request.args.get('lat')
     lng = request.args.get('lng')
-    radius = request.args.get('radius', 5000)  # Default 5km
+    radius = request.args.get('radius', 10000)  # Default 10km for wider search
     category_filter = request.args.get('category')
     
     if not lat or not lng:
         return jsonify({"error": "Latitude and longitude are required"}), 400
     
     try:
-        location = (float(lat), float(lng))
+        lat = float(lat)
+        lng = float(lng)
+        radius = int(radius)
         
-        # Map category to Google Places type
-        place_type = None
-        if category_filter and category_filter != 'All':
-            category_map = {
-                'Restaurants': 'restaurant',
-                'Hotels': 'lodging',
-                'Attractions': 'tourist_attraction',
-                'Museums': 'museum',
-                'Parks & Recreation': 'park',
-                'Shopping': 'shopping_mall'
-            }
-            place_type = category_map.get(category_filter)
+        print(f"[INFO] [NEARBY SEARCH] lat={lat}, lng={lng}, radius={radius}m, category={category_filter}")
         
-        # Search nearby places
-        results = gmaps.places_nearby(
-            location=location,
-            radius=int(radius),
-            type=place_type
-        )
+        all_places = []
         
-        formatted_places = []
+        # Determine search strategy based on category
+        api_config = map_category_to_apis(category_filter) if category_filter and category_filter != 'All' else {
+            'primary': 'both', 'yelp_category': None, 'otm_kinds': 'interesting_places'
+        }
         
-        for place in results.get('results', []):
+        print(f"[STRATEGY] API Strategy: {api_config['primary']}")
+        
+        # Query Yelp for POPULAR businesses (sorted by rating and review count)
+        if api_config['primary'] in ['yelp', 'both'] and yelp_client:
             try:
-                place_id = place.get('place_id')
+                yelp_params = {
+                    'latitude': lat,
+                    'longitude': lng,
+                    'radius': min(radius, 40000),  # Yelp max is 40km
+                    'limit': 20,
+                    'sort_by': 'rating'  # Sort by rating for popular places
+                }
                 
-                # Get photo URL
-                photo_url = None
-                photos = place.get('photos')
-                if photos and len(photos) > 0:
-                    photo_reference = photos[0].get('photo_reference')
-                    if photo_reference:
-                        photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
+                if api_config['yelp_category']:
+                    yelp_params['categories'] = api_config['yelp_category']
                 
-                # Get detailed place information
-                details = gmaps.place(place_id=place_id, fields=[
-                    'name', 'formatted_address', 'geometry', 
-                    'rating', 'type', 'url'
-                ])
+                yelp_results = yelp_client.search(**yelp_params)
                 
-                if details['status'] == 'OK':
-                    result = details['result']
+                if yelp_results and 'businesses' in yelp_results:
+                    for business in yelp_results['businesses']:
+                        try:
+                            # Filter by minimum review count to ensure popularity
+                            if business.get('review_count', 0) >= 10:  # At least 10 reviews
+                                place = normalize_yelp_place(business)
+                                if place.get('lat') and place.get('lng'):
+                                    all_places.append(place)
+                        except Exception as e:
+                            print(f"[WARN] Error normalizing Yelp business: {e}")
                     
-                    # Extract category from type
-                    place_type = result.get('types', [])
-                    if isinstance(place_type, str):
-                        place_type = [place_type]
-                    category = extract_category_from_types(place_type)
-                    
-                    # Apply category filter if specified
-                    if category_filter and category_filter != 'All' and category != category_filter:
-                        continue
-                    
-                    formatted_place = {
-                        'place_id': place_id,
-                        'place_name': result.get('name', ''),
-                        'address': result.get('formatted_address', ''),
-                        'city_name': extract_city_from_address(result.get('formatted_address', '')),
-                        'category': category,
-                        'image_url': photo_url,
-                        'rating': str(result.get('rating', '4.5')),
-                        'google_maps_url': result.get('url', ''),
-                        'lat': result['geometry']['location']['lat'],
-                        'lng': result['geometry']['location']['lng']
-                    }
-                    formatted_places.append(formatted_place)
-            
+                    print(f"[OK] Yelp returned {len(yelp_results['businesses'])} businesses")
             except Exception as e:
-                print(f"Error processing place: {e}")
-                continue
+                print(f"[ERROR] Yelp search error: {e}")
+        
+        # Query OpenTripMap for POPULAR attractions (filtered by rate >= 3)
+        if api_config['primary'] in ['otm', 'both'] and otm_client:
+            try:
+                otm_kinds = api_config['otm_kinds'] or 'interesting_places,tourist_facilities'
+                
+                otm_results = otm_client.search_radius(
+                    latitude=lat,
+                    longitude=lng,
+                    radius=radius,
+                    kinds=otm_kinds,
+                    rate=3,  # Minimum rate of 3 (moderately notable) - POPULAR ONLY
+                    limit=20
+                )
+                
+                if otm_results and isinstance(otm_results, list):
+                    for place in otm_results:
+                        try:
+                            if place.get('name') and place.get('rate', 0) >= 3:  # Filter popular
+                                normalized = normalize_otm_place(place)
+                                all_places.append(normalized)
+                        except Exception as e:
+                            print(f"[WARN] Error normalizing OTM place: {e}")
+                    
+                    print(f"[OK] OpenTripMap returned {len(otm_results)} places")
+            except Exception as e:
+                print(f"[ERROR] OpenTripMap search error: {e}")
+        
+        # Sort by popularity (rating × review_count for Yelp, rate for OTM)
+        all_places.sort(key=lambda x: x.get('popularity', 0), reverse=True)
+        
+        # Clean up and add fallback images
+        for place in all_places:
+            place.pop('popularity', None)
+            place.pop('review_count', None)
+            place.pop('rate', None)
+            
+            if not place.get('image_url'):
+                place['image_url'] = 'https://via.placeholder.com/400x250/1a1a2e/6366f1?text=No+Image'
+        
+        # Return top results (most popular)
+        top_places = all_places[:20]
+        
+        print(f"[OK] Returning {len(top_places)} POPULAR places (sorted by popularity)")
         
         return jsonify({
-            'places': formatted_places,
-            'total': len(formatted_places)
+            'places': top_places,
+            'total': len(top_places)
         }), 200
         
     except Exception as e:
-        print("Error in nearby search:", e)
+        print(f"[ERROR] Error in nearby search: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 def extract_category_from_types(types):
@@ -1862,28 +2889,66 @@ def extract_category_from_types(types):
 # Endpoint to get basic place details (coordinates, etc.)
 @app.route('/api/place-details', methods=['GET'])
 def get_basic_place_details():
-    """Get basic place details (lat/lng) from place_id"""
-    if not gmaps:
-        return jsonify({"error": "Google Places API is not configured"}), 500
-    
+    """Get basic place details (lat/lng) from place_id - Hybrid version"""
     place_id = request.args.get('place_id')
     if not place_id:
         return jsonify({"error": "place_id is required"}), 400
     
     try:
-        details = gmaps.place(place_id=place_id, fields=['geometry'])
+        # Check if it's a Nominatim place_id
+        if place_id.startswith('nominatim:'):
+            nom_id = place_id.replace('nominatim:', '')
+            if nominatim_client:
+                # For Nominatim, we need to search by query since we don't have direct lookup by ID
+                # Use cached geocoding results or search
+                cache_key = f"nominatim:lookup:{nom_id}"
+                conn = mysql.connector.connect(**db_config)
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT data FROM cached_geocoding 
+                    WHERE query = %s AND cache_expires_at > NOW()
+                """, (cache_key,))
+                result = cursor.fetchone()
+                conn.close()
+                
+                if result:
+                    data = json.loads(result['data'])
+                    return jsonify({
+                        "lat": float(data.get('lat')),
+                        "lng": float(data.get('lon'))
+                    }), 200
+            
+            return jsonify({"error": "Place not found"}), 404
         
-        if details['status'] != 'OK':
-            return jsonify({"error": f"Place not found: {details.get('status')}"}), 404
+        # Check if it's a Yelp business ID
+        elif place_id.startswith('yelp:'):
+            business_id = place_id.replace('yelp:', '')
+            if yelp_client:
+                business = yelp_client.get_business(business_id)
+                if business:
+                    coords = business.get('coordinates', {})
+                    return jsonify({
+                        "lat": coords.get('latitude'),
+                        "lng": coords.get('longitude')
+                    }), 200
+            return jsonify({"error": "Business not found"}), 404
         
-        result = details['result']
-        geometry = result.get('geometry', {})
-        location = geometry.get('location', {})
+        # Check if it's an OpenTripMap xid
+        elif place_id.startswith('otm:'):
+            xid = place_id.replace('otm:', '')
+            if otm_client:
+                place = otm_client.get_place(xid)
+                if place:
+                    point = place.get('point', {})
+                    return jsonify({
+                        "lat": point.get('lat'),
+                        "lng": point.get('lon')
+                    }), 200
+            return jsonify({"error": "Place not found"}), 404
         
-        return jsonify({
-            "lat": location.get('lat'),
-            "lng": location.get('lng')
-        }), 200
+        # Legacy Google Place ID - no longer supported
+        else:
+            return jsonify({"error": "Google Place IDs are no longer supported. Please use Yelp or OpenTripMap place IDs."}), 410
         
     except Exception as e:
         print(f"Error in get_basic_place_details: {e}")
@@ -1891,75 +2956,113 @@ def get_basic_place_details():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# New endpoint to get place details from Google Places API
-@app.route('/api/place/<place_id>', methods=['GET'])
+# Hybrid endpoint to get place details from Yelp, OpenTripMap, or Google
+@app.route('/api/place/<path:place_id>', methods=['GET'])
 def get_place_details(place_id):
-    """Get place details using Google Places API instead of MySQL database"""
-    if not gmaps:
-        return jsonify({"error": "Google Places API is not configured"}), 500
-    
+    """Get place details - Hybrid version supporting yelp:, otm:, nominatim:, and Google place IDs"""
     try:
-        # Get place details from Google Places API
-        details = gmaps.place(place_id=place_id, fields=[
-            'name', 'formatted_address', 'geometry', 'photo', 
-            'rating', 'type', 'url', 'website', 'formatted_phone_number',
-            'opening_hours', 'price_level', 'user_ratings_total'
-        ])
+        # Yelp business details
+        if place_id.startswith('yelp:'):
+            business_id = place_id.replace('yelp:', '')
+            if not yelp_client:
+                return jsonify({"error": "Yelp client not configured"}), 500
+            
+            business = yelp_client.get_business(business_id)
+            if not business:
+                return jsonify({"error": "Business not found"}), 404
+            
+            location = business.get('location', {})
+            coordinates = business.get('coordinates', {})
+            
+            # Get photo URLs (Yelp provides up to 3 photos)
+            photos = business.get('photos', [])
+            if not photos:
+                photos = [business.get('image_url')] if business.get('image_url') else []
+            
+            # Format Yelp categories
+            categories = business.get('categories', [])
+            category_names = [cat.get('title', '') for cat in categories if cat.get('title')]
+            
+            place_details = {
+                'id': place_id,
+                'name': business.get('name', ''),
+                'category': ', '.join(category_names[:2]) if category_names else 'Business',
+                'address': location.get('display_address', [' '.join(location.get('display_address', []))]),
+                'city_name': location.get('city', ''),
+                'image_url': photos[0] if photos else 'https://via.placeholder.com/400x250/1a1a2e/6366f1?text=No+Image',
+                'photos': photos,
+                'rating': business.get('rating', 0),
+                'user_ratings_total': business.get('review_count', 0),
+                'price_level': len(business.get('price', '')) if business.get('price') else None,
+                'phone': business.get('display_phone'),
+                'website': business.get('url'),  # Yelp page URL
+                'google_maps_url': f"https://www.google.com/maps/search/?api=1&query={coordinates.get('latitude')},{coordinates.get('longitude')}" if coordinates else None,
+                'opening_hours': business.get('hours'),
+                'lat': coordinates.get('latitude'),
+                'lng': coordinates.get('longitude'),
+                'source': 'yelp'
+            }
+            
+            return jsonify(place_details), 200
         
-        if details['status'] != 'OK':
-            return jsonify({"error": f"Place not found: {details.get('status')}"}), 404
+        # OpenTripMap place details
+        elif place_id.startswith('otm:'):
+            xid = place_id.replace('otm:', '')
+            if not otm_client:
+                return jsonify({"error": "OpenTripMap client not configured"}), 500
+            
+            place = otm_client.get_place(xid)
+            if not place:
+                return jsonify({"error": "Place not found"}), 404
+            
+            point = place.get('point', {})
+            preview = place.get('preview', {})
+            
+            # Get photo (OpenTripMap provides one main photo)
+            photo_url = preview.get('source', '') if preview else ''
+            photos = [photo_url] if photo_url else []
+            
+            # Get description/info
+            description = place.get('wikipedia_extracts', {}).get('text', '') or place.get('info', {}).get('descr', '')
+            
+            # Get kinds/category
+            kinds = place.get('kinds', '')
+            category = kinds.split(',')[0].replace('_', ' ').title() if kinds else 'Attraction'
+            
+            # Rate is popularity (1-7 scale)
+            rate = place.get('rate', 0)
+            
+            # Get address info
+            address_info = place.get('address', {})
+            city = address_info.get('city', '') or address_info.get('state', '')
+            
+            place_details = {
+                'id': place_id,
+                'name': place.get('name', 'Unknown Place'),
+                'category': category,
+                'address': address_info.get('road', '') or address_info.get('suburb', ''),
+                'city_name': city,
+                'image_url': photo_url or 'https://via.placeholder.com/400x250/1a1a2e/6366f1?text=No+Image',
+                'photos': photos,
+                'rating': min(5.0, rate),  # Convert rate to 5-star scale
+                'user_ratings_total': 0,  # OTM doesn't have review counts
+                'price_level': None,
+                'phone': None,
+                'website': place.get('otm'),  # OpenTripMap page
+                'wikipedia': place.get('wikipedia'),
+                'description': description,
+                'google_maps_url': f"https://www.google.com/maps/search/?api=1&query={point.get('lat')},{point.get('lon')}" if point else None,
+                'opening_hours': None,
+                'lat': point.get('lat'),
+                'lng': point.get('lon'),
+                'source': 'opentripmap'
+            }
+            
+            return jsonify(place_details), 200
         
-        result = details['result']
-        
-        # Get ALL photo URLs
-        photo_urls = []
-        photo_data = result.get('photos')
-        print(f"DEBUG Photo data for {result.get('name', 'Unknown')}: {photo_data}")
-        
-        if photo_data and isinstance(photo_data, list):
-            # Get up to 10 photos
-            print(f"DEBUG: Found {len(photo_data)} photos")
-            for photo in photo_data[:10]:
-                photo_reference = photo.get('photo_reference')
-                if photo_reference:
-                    photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
-                    photo_urls.append(photo_url)
-                    print(f"DEBUG: Added photo URL with reference {photo_reference[:20]}...")
-        elif photo_data and isinstance(photo_data, dict):
-            photo_reference = photo_data.get('photo_reference')
-            if photo_reference:
-                photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
-                photo_urls.append(photo_url)
-                print(f"DEBUG: Added single photo URL")
-        
-        print(f"DEBUG: Total photos added: {len(photo_urls)}")
-        
-        # Get place type and convert to category
-        place_type = result.get('types', [])
-        if isinstance(place_type, str):
-            place_type = [place_type]
-        
-        # Format response
-        place_details = {
-            'id': place_id,
-            'name': result.get('name', ''),
-            'category': extract_category_from_types(place_type),
-            'address': result.get('formatted_address', ''),
-            'city_name': extract_city_from_address(result.get('formatted_address', '')),
-            'image_url': photo_urls[0] if photo_urls else None,  # Keep for backward compatibility
-            'photos': photo_urls,  # New field with all photos
-            'rating': result.get('rating', 0),
-            'user_ratings_total': result.get('user_ratings_total', 0),
-            'price_level': result.get('price_level'),
-            'phone': result.get('formatted_phone_number'),
-            'website': result.get('website'),
-            'google_maps_url': result.get('url'),
-            'opening_hours': result.get('opening_hours'),
-            'lat': result['geometry']['location']['lat'] if 'geometry' in result else None,
-            'lng': result['geometry']['location']['lng'] if 'geometry' in result else None
-        }
-        
-        return jsonify(place_details), 200
+        # Legacy Google Place ID - no longer supported
+        else:
+            return jsonify({"error": "Google Place IDs are no longer supported. Please use Yelp or OpenTripMap place IDs."}), 410
         
     except Exception as e:
         print("Error fetching place details:", e)
@@ -2018,24 +3121,9 @@ def get_calendar_events():
         # For each event with a place_id, fetch place details from Google Places
         for event in events:
             if event['place_id']:
-                try:
-                    # Use Google Places API to get place details
-                    place_details = gmaps.place(
-                        place_id=event['place_id'],
-                        fields=['name', 'formatted_address', 'type']
-                    )
-                    
-                    if place_details['status'] == 'OK':
-                        place_data = place_details['result']
-                        event['place_name'] = place_data.get('name', '')
-                        event['place_address'] = place_data.get('formatted_address', '')
-                        event['place_category'] = extract_category_from_types(
-                            [place_data.get('types', [])] if isinstance(place_data.get('types'), str) 
-                            else place_data.get('types', [])
-                        )
-                        event['city_name'] = extract_city_from_address(place_data.get('formatted_address', ''))
-                except Exception as e:
-                    print(f"Error fetching place details for {event['place_id']}: {e}")
+                # Place details no longer fetched (Google Places API removed)
+                # Calendar events now only show place_id
+                pass
                 event['place_name'] = ''
                 event['place_address'] = ''
                 event['place_category'] = ''
@@ -3760,20 +4848,12 @@ def get_planner_items(trip_id):
             if item.get('end_time'):
                 item['end_time'] = str(item['end_time']) if item['end_time'] else None
             
-            # Fetch photo from Google Places API if google_place_id exists
-            if item.get('google_place_id') and gmaps:
-                try:
-                    # Get basic place details which includes photos
-                    place_details = gmaps.place(place_id=item['google_place_id'])
-                    place_data = place_details.get('result', {})
-                    photos = place_data.get('photos')
-                    if photos and len(photos) > 0:
-                        photo_reference = photos[0].get('photo_reference')
-                        if photo_reference:
-                            item['photo_url'] = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
-                except Exception as e:
-                    print(f"Error fetching photo for {item.get('item_name')}: {e}")
-                    item['photo_url'] = None
+            # Use stored image_url from database
+            if not item.get('image_url'):
+                item['image_url'] = 'https://via.placeholder.com/400x250/1a1a2e/6366f1?text=No+Image'
+            
+            # Set photo_url for frontend compatibility
+            item['photo_url'] = item.get('image_url')
         
         # Just return items immediately - distance calculation happens separately
         # Frontend will call /api/planner/calculate-distances separately if needed
@@ -3789,7 +4869,7 @@ def get_planner_items(trip_id):
 
 @app.route('/api/planner/items', methods=['POST'])
 def create_planner_item():
-    """Create a new planner item"""
+    """Create a new planner item - HYBRID VERSION (Yelp/OpenTripMap)"""
     data = request.json
     trip_id = data.get('trip_id')
     item_name = data.get('item_name')
@@ -3803,12 +4883,15 @@ def create_planner_item():
     cost = data.get('cost')
     notes = data.get('notes')
     created_by = data.get('created_by')
-    google_place_id = data.get('google_place_id')
+    google_place_id = data.get('google_place_id')  # Can be yelp:xxx, otm:xxx, or legacy Google ID
     latitude = data.get('latitude')
     longitude = data.get('longitude')
+    image_url = data.get('image_url')  # NEW: Get image from request
+    rating = data.get('rating')  # NEW: Get rating from request
     
     print(f"[ADD-ITEM] Creating planner item: {item_name} for trip {trip_id}")
     print(f"[ADD-ITEM] Coordinates: lat={latitude}, lng={longitude}, place_id={google_place_id}")
+    print(f"[ADD-ITEM] Image: {image_url}")
     
     if not all([trip_id, item_name, start_date, created_by]):
         return jsonify({"error": "Missing required fields"}), 400
@@ -3826,58 +4909,105 @@ def create_planner_item():
         """, (trip_id, start_date))
         next_order = cursor.fetchone()[0]
         
-        # Create planner item
+        # Ensure image has a fallback
+        if not image_url:
+            image_url = 'https://via.placeholder.com/400x250/1a1a2e/6366f1?text=No+Image'
+        
+        # Create planner item with image_url
         item_query = """
         INSERT INTO planner (trip_id, item_name, item_type, description, location, 
-                           start_date, end_date, start_time, end_time, cost, notes, created_by, google_place_id, latitude, longitude, order_index)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           start_date, end_date, start_time, end_time, cost, notes, created_by, 
+                           google_place_id, latitude, longitude, order_index, image_url, rating)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         cursor.execute(item_query, (
             trip_id, item_name, item_type, description, location,
-            start_date, end_date, start_time, end_time, cost, notes, created_by, google_place_id, latitude, longitude, next_order
+            start_date, end_date, start_time, end_time, cost, notes, created_by, 
+            google_place_id, latitude, longitude, next_order, image_url, rating
         ))
         planner_id = cursor.lastrowid
         
-        # If google_place_id is provided, store the place and link it
+        # If place_id is provided, store the place and link it (HYBRID VERSION)
         if google_place_id:
-            # First, get place details from Google API
-            if gmaps:
-                try:
-                    place_details = gmaps.place(google_place_id, fields=['name', 'formatted_address', 'geometry', 'rating', 'types'])
-                    place_data = place_details.get('result', {})
+            try:
+                # Determine source from place_id prefix
+                if google_place_id.startswith('yelp:'):
+                    # Yelp business
+                    business_id = google_place_id.replace('yelp:', '')
+                    if yelp_client:
+                        business = yelp_client.get_business(business_id)
+                        if business:
+                            location_data = business.get('location', {})
+                            coordinates = business.get('coordinates', {})
+                            
+                            # Store in google_places table (renamed for compatibility)
+                            place_query = """
+                            INSERT INTO google_places (place_id, name, address, latitude, longitude, place_type, rating)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE
+                            name = VALUES(name), address = VALUES(address), 
+                            latitude = VALUES(latitude), longitude = VALUES(longitude),
+                            place_type = VALUES(place_type), rating = VALUES(rating)
+                            """
+                            cursor.execute(place_query, (
+                                google_place_id,
+                                business.get('name', ''),
+                                location_data.get('address1', ''),
+                                coordinates.get('latitude'),
+                                coordinates.get('longitude'),
+                                'yelp_business',
+                                business.get('rating')
+                            ))
+                            
+                            # Link planner item to place
+                            link_query = """
+                            INSERT INTO planner_places (planner_id, google_place_id, place_source)
+                            VALUES (%s, %s, 'yelp')
+                            """
+                            cursor.execute(link_query, (planner_id, google_place_id))
+                
+                elif google_place_id.startswith('otm:'):
+                    # OpenTripMap place
+                    xid = google_place_id.replace('otm:', '')
+                    if otm_client:
+                        place = otm_client.get_place(xid)
+                        if place:
+                            point = place.get('point', {})
+                            
+                            # Store in google_places table
+                            place_query = """
+                            INSERT INTO google_places (place_id, name, address, latitude, longitude, place_type, rating)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE
+                            name = VALUES(name), address = VALUES(address), 
+                            latitude = VALUES(latitude), longitude = VALUES(longitude),
+                            place_type = VALUES(place_type)
+                            """
+                            cursor.execute(place_query, (
+                                google_place_id,
+                                place.get('name', ''),
+                                place.get('address', {}).get('road', ''),
+                                point.get('lat'),
+                                point.get('lon'),
+                                'otm_place',
+                                None
+                            ))
+                            
+                            # Link planner item to place
+                            link_query = """
+                            INSERT INTO planner_places (planner_id, google_place_id, place_source)
+                            VALUES (%s, %s, 'opentripmap')
+                            """
+                            cursor.execute(link_query, (planner_id, google_place_id))
+                
+                else:
+                    # Legacy Google Place ID - skip for now (no longer supported)
+                    print(f"[WARN] Legacy Google Place ID detected and skipped: {google_place_id}")
                     
-                    # Store or update place in google_places table
-                    place_query = """
-                    INSERT INTO google_places (place_id, name, address, latitude, longitude, place_type, rating)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE
-                    name = VALUES(name), address = VALUES(address), 
-                    latitude = VALUES(latitude), longitude = VALUES(longitude),
-                    place_type = VALUES(place_type), rating = VALUES(rating)
-                    """
-                    
-                    geometry = place_data.get('geometry', {}).get('location', {})
-                    place_type = ', '.join(place_data.get('types', []))
-                    
-                    cursor.execute(place_query, (
-                        google_place_id,
-                        place_data.get('name', ''),
-                        place_data.get('formatted_address', ''),
-                        geometry.get('lat'),
-                        geometry.get('lng'),
-                        place_type,
-                        place_data.get('rating')
-                    ))
-                    
-                    # Link planner item to google place
-                    link_query = """
-                    INSERT INTO planner_places (planner_id, google_place_id)
-                    VALUES (%s, %s)
-                    """
-                    cursor.execute(link_query, (planner_id, google_place_id))
-                    
-                except Exception as e:
-                    print(f"Error fetching place details: {e}")
+            except Exception as e:
+                print(f"Error fetching place details: {e}")
+                import traceback
+                traceback.print_exc()
         
         conn.commit()
         
@@ -3921,31 +5051,31 @@ def create_planner_item():
 
 @app.route('/api/planner/<int:trip_id>/calculate-distances', methods=['POST'])
 def calculate_planner_distances(trip_id):
-    """Calculate and cache distances between planner items"""
-    if not gmaps:
-        return jsonify({"error": "Google Maps API not configured"}), 500
+    """Calculate and cache distances between planner items using OSRM"""
+    if not osrm_client:
+        return jsonify({"error": "OSRM client not configured"}), 500
     
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor(dictionary=True)
         
-        # Get all items for this trip, ordered correctly
+        # Get all items for this trip with coordinates, ordered correctly
         query = """
-        SELECT planner_id, item_name, location, start_date
+        SELECT planner_id, item_name, location, start_date, latitude, longitude
         FROM planner
-        WHERE trip_id = %s
+        WHERE trip_id = %s AND latitude IS NOT NULL AND longitude IS NOT NULL
         ORDER BY start_date, order_index, start_time, planner_id
         """
         cursor.execute(query, (trip_id,))
         items = cursor.fetchall()
         
         if len(items) < 2:
-            return jsonify({"message": "Not enough items to calculate distances", "updated": 0})
+            return jsonify({"message": "Not enough items with coordinates to calculate distances", "updated": 0})
         
-        print(f"[DISTANCE-CACHE] Calculating distances for {len(items)} items")
+        print(f"[OSRM DISTANCE] Calculating distances for {len(items)} items")
         
-        # Build batch request for Distance Matrix API
+        # Build list of coordinate pairs
         origins = []
         destinations = []
         item_pairs = []
@@ -3954,61 +5084,71 @@ def calculate_planner_distances(trip_id):
             current_item = items[i]
             next_item = items[i + 1]
             
-            origin = current_item.get('location') or current_item.get('item_name')
-            destination = next_item.get('location') or next_item.get('item_name')
+            current_lat = current_item.get('latitude')
+            current_lng = current_item.get('longitude')
+            next_lat = next_item.get('latitude')
+            next_lng = next_item.get('longitude')
             
-            if origin and destination:
-                origins.append(origin)
-                destinations.append(destination)
+            if all([current_lat, current_lng, next_lat, next_lng]):
+                origins.append((current_lat, current_lng))
+                destinations.append((next_lat, next_lng))
                 item_pairs.append((current_item, next_item))
         
         if not origins:
-            return jsonify({"message": "No valid locations to calculate", "updated": 0})
+            return jsonify({"message": "No valid coordinate pairs to calculate", "updated": 0})
         
-        # Single batch API call
-        result = gmaps.distance_matrix(
-            origins=origins,
-            destinations=destinations,
-            mode="driving",
-            units="imperial"
-        )
-        
-        if result.get('status') == 'REQUEST_DENIED':
-            return jsonify({"error": "Distance Matrix API not enabled"}), 403
+        # Call OSRM distance matrix (with caching)
+        result = osrm_client.distance_matrix(origins, destinations)
         
         updated_count = 0
         
-        # Update database with cached distances
-        if result.get('rows'):
-            for i, row in enumerate(result['rows']):
-                if i < len(item_pairs) and row.get('elements') and i < len(row['elements']):
-                    # IMPORTANT: For batch Distance Matrix, each row has multiple elements
-                    # We want row[i] element[i] to get the correct pair
-                    element = row['elements'][i]
-                    current_item, next_item = item_pairs[i]
+        # Update database with calculated distances
+        if result.get('distances') and result.get('durations'):
+            print(f"[OSRM DISTANCE] Result matrix size: {len(result['distances'])}x{len(result['distances'][0]) if result['distances'] else 0}")
+            for i, (current_item, next_item) in enumerate(item_pairs):
+                # Check if index is valid
+                if i >= len(result['distances']) or i >= len(result['distances'][i]):
+                    print(f"[OSRM DISTANCE] Index {i} out of bounds for matrix")
+                    continue
                     
-                    if element['status'] == 'OK':
-                        distance_text = element['distance']['text']
-                        duration_text = element['duration']['text']
-                        from_location = current_item.get('item_name')
-                        
-                        cursor.execute("""
-                            UPDATE planner
-                            SET distance_from_previous = %s,
-                                duration_from_previous = %s,
-                                from_location = %s
-                            WHERE planner_id = %s
-                        """, (
-                            distance_text,
-                            duration_text,
-                            from_location,
-                            next_item['planner_id']
-                        ))
-                        updated_count += 1
-                        print(f"[DISTANCE-CACHE] Cached: {duration_text} / {distance_text}")
+                distance_meters = result['distances'][i][i]  # Diagonal elements are the pairs
+                duration_seconds = result['durations'][i][i]
+                
+                if distance_meters is not None and duration_seconds is not None:
+                    # Convert to miles and format
+                    distance_miles = distance_meters * 0.000621371
+                    distance_text = f"{distance_miles:.1f} mi"
+                    
+                    # Convert seconds to readable time
+                    duration_minutes = duration_seconds / 60
+                    if duration_minutes < 60:
+                        duration_text = f"{int(duration_minutes)} min"
+                    else:
+                        hours = int(duration_minutes / 60)
+                        mins = int(duration_minutes % 60)
+                        duration_text = f"{hours} hr {mins} min" if mins > 0 else f"{hours} hr"
+                    
+                    from_location = current_item.get('item_name')
+                    
+                    cursor.execute("""
+                        UPDATE planner
+                        SET distance_from_previous = %s,
+                            duration_from_previous = %s,
+                            from_location = %s
+                        WHERE planner_id = %s
+                    """, (
+                        distance_text,
+                        duration_text,
+                        from_location,
+                        next_item['planner_id']
+                    ))
+                    updated_count += 1
+                    print(f"[OSRM DISTANCE] Updated item {next_item['planner_id']}: {duration_text} / {distance_text} from {from_location}")
+                else:
+                    print(f"[OSRM DISTANCE] No distance data for item pair {i}: {current_item.get('item_name')} -> {next_item.get('item_name')}")
         
         conn.commit()
-        print(f"[DISTANCE-CACHE] Successfully cached distances for {updated_count} items")
+        print(f"[OSRM DISTANCE] Successfully cached distances for {updated_count} items")
         
         return jsonify({"success": True, "updated": updated_count})
         
@@ -4062,209 +5202,13 @@ def reorder_planner_items():
 
 @app.route('/api/planner/items/fix-categories', methods=['POST'])
 def fix_planner_item_categories():
-    """Fix categories for existing planner items based on their Google Place ID"""
-    conn = None
-    try:
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
-        
-        # Get all planner items with google_place_id
-        query = """
-        SELECT planner_id, item_name, google_place_id, item_type
-        FROM planner
-        WHERE google_place_id IS NOT NULL AND google_place_id != ''
-        """
-        cursor.execute(query)
-        items = cursor.fetchall()
-        
-        updated_count = 0
-        skipped_count = 0
-        print(f"[FIX-CATEGORIES] Found {len(items)} items with Google Place IDs")
-        
-        if not gmaps:
-            print("[FIX-CATEGORIES] Google Maps API not configured, skipping")
-            return jsonify({"error": "Google Maps API not configured"}), 500
-        
-        for item in items:
-            try:
-                print(f"[FIX-CATEGORIES] Processing: {item['item_name']} (ID: {item['planner_id']})")
-                
-                # Get place details from Google
-                place = gmaps.place(place_id=item['google_place_id'])
-                
-                if place.get('status') == 'OK' and place.get('result'):
-                    types = place['result'].get('types', [])
-                    print(f"[FIX-CATEGORIES] Place types: {types}")
-                    
-                    # Category mapping (same as in search endpoint)
-                    category_map = {
-                        'restaurant': 'Restaurants',
-                        'cafe': 'Restaurants',
-                        'bar': 'Restaurants',
-                        'night_club': 'Nightlife',
-                        'museum': 'Museums',
-                        'art_gallery': 'Museums',
-                        'park': 'Parks & Recreation',
-                        'amusement_park': 'Parks & Recreation',
-                        'zoo': 'Parks & Recreation',
-                        'aquarium': 'Parks & Recreation',
-                        'shopping_mall': 'Shopping',
-                        'store': 'Shopping',
-                        'lodging': 'Hotels',
-                        'tourist_attraction': 'Attractions',
-                        'point_of_interest': 'Attractions'
-                    }
-                    
-                    category = 'Attractions'  # Default
-                    for place_type in types:
-                        if place_type in category_map:
-                            category = category_map[place_type]
-                            print(f"[FIX-CATEGORIES] Matched type '{place_type}' -> '{category}'")
-                            break
-                    
-                    # Update the item if category is different
-                    if item['item_type'] != category:
-                        update_query = """
-                        UPDATE planner
-                        SET item_type = %s
-                        WHERE planner_id = %s
-                        """
-                        cursor.execute(update_query, (category, item['planner_id']))
-                        updated_count += 1
-                        print(f"[FIX-CATEGORIES] Updated '{item['item_name']}' from '{item['item_type']}' to '{category}'")
-                    else:
-                        skipped_count += 1
-                        print(f"[FIX-CATEGORIES] Skipped '{item['item_name']}' - already correct ({category})")
-                else:
-                    skipped_count += 1
-                    print(f"[FIX-CATEGORIES] Could not get place details for '{item['item_name']}'")
-                
-            except Exception as e:
-                skipped_count += 1
-                print(f"[FIX-CATEGORIES] Error updating item {item['planner_id']}: {str(e)[:200]}")
-                continue
-        
-        conn.commit()
-        message = f"Updated {updated_count} items, skipped {skipped_count} items"
-        print(f"[FIX-CATEGORIES] {message}")
-        return jsonify({"message": message, "updated": updated_count, "skipped": skipped_count})
-        
-    except Exception as e:
-        print(f"Error in fix_planner_item_categories: {e}")
-        import traceback
-        traceback.print_exc()
-        if conn:
-            conn.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        if conn:
-            conn.close()
+    """Fix categories - DEPRECATED: Google Places API no longer used"""
+    return jsonify({"error": "This endpoint is deprecated. Categories are now set when items are created."}), 410
 
 @app.route('/api/planner/<int:trip_id>/fix-place-ids', methods=['POST'])
 def fix_missing_place_ids(trip_id):
-    """Find and add Google Place IDs for items that don't have them"""
-    if not gmaps:
-        return jsonify({"error": "Google Maps API not configured"}), 500
-    
-    conn = None
-    try:
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
-        
-        # Get all items without google_place_id
-        query = """
-        SELECT planner_id, item_name, location, item_type
-        FROM planner
-        WHERE trip_id = %s AND (google_place_id IS NULL OR google_place_id = '')
-        """
-        cursor.execute(query, (trip_id,))
-        items = cursor.fetchall()
-        
-        print(f"\n[FIX-PLACE-IDS] Found {len(items)} items without Google Place IDs")
-        
-        updated_count = 0
-        skipped_count = 0
-        
-        for item in items:
-            try:
-                item_name = item['item_name']
-                location = item.get('location', '')
-                
-                # Search for the place using name and location
-                search_query = f"{item_name} {location}" if location else item_name
-                print(f"[FIX-PLACE-IDS] Searching for: '{search_query}'")
-                
-                # Use places text search
-                results = gmaps.places(query=search_query)
-                
-                if results.get('results') and len(results['results']) > 0:
-                    # Get the first result (most relevant)
-                    place = results['results'][0]
-                    place_id = place.get('place_id')
-                    place_name = place.get('name', '')
-                    
-                    print(f"[FIX-PLACE-IDS] Found match: '{place_name}' (Place ID: {place_id})")
-                    
-                    # Update the planner item with the google_place_id
-                    update_query = """
-                    UPDATE planner
-                    SET google_place_id = %s
-                    WHERE planner_id = %s
-                    """
-                    cursor.execute(update_query, (place_id, item['planner_id']))
-                    
-                    # Also store the place in google_places table
-                    place_details = gmaps.place(place_id=place_id)
-                    place_data = place_details.get('result', {})
-                    
-                    place_query = """
-                    INSERT INTO google_places (place_id, name, address, latitude, longitude, place_type, rating)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE
-                    name = VALUES(name), address = VALUES(address), 
-                    latitude = VALUES(latitude), longitude = VALUES(longitude),
-                    place_type = VALUES(place_type), rating = VALUES(rating)
-                    """
-                    
-                    geometry = place_data.get('geometry', {}).get('location', {})
-                    place_type = ', '.join(place_data.get('types', []))
-                    
-                    cursor.execute(place_query, (
-                        place_id,
-                        place_data.get('name', ''),
-                        place_data.get('formatted_address', ''),
-                        geometry.get('lat'),
-                        geometry.get('lng'),
-                        place_type,
-                        place_data.get('rating')
-                    ))
-                    
-                    updated_count += 1
-                    print(f"[FIX-PLACE-IDS] Updated '{item_name}' with Place ID: {place_id}")
-                else:
-                    skipped_count += 1
-                    print(f"[FIX-PLACE-IDS] No results found for '{item_name}'")
-                
-            except Exception as e:
-                skipped_count += 1
-                print(f"[FIX-PLACE-IDS] Error updating item {item['planner_id']}: {str(e)[:200]}")
-                continue
-        
-        conn.commit()
-        message = f"Updated {updated_count} items with Google Place IDs, skipped {skipped_count} items"
-        print(f"[FIX-PLACE-IDS] {message}")
-        return jsonify({"message": message, "updated": updated_count, "skipped": skipped_count})
-        
-    except Exception as e:
-        print(f"Error in fix_missing_place_ids: {e}")
-        import traceback
-        traceback.print_exc()
-        if conn:
-            conn.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        if conn:
-            conn.close()
+    """Fix missing place IDs - DEPRECATED: Google Places API no longer used"""
+    return jsonify({"error": "This endpoint is deprecated."}), 410
 
 @app.route('/api/planner/items/<int:planner_id>', methods=['PUT'])
 def update_planner_item(planner_id):
@@ -4424,135 +5368,267 @@ def update_planner_item_time(planner_id):
 
 @app.route('/api/planner/recommendations', methods=['POST'])
 def get_recommendations():
-    """Get nearby place recommendations based on location and type"""
-    if not gmaps:
-        return jsonify({"error": "Google Maps API not configured"}), 500
-    
-    data = request.json
-    latitude = data.get('latitude')
-    longitude = data.get('longitude')
-    place_type = data.get('type', 'all')  # Default to all types
-    radius = data.get('radius', 5000)  # Default 5km radius
-    page_token = data.get('page_token')  # For pagination
-    
-    # Latitude and longitude are required (for distance calculations)
-    # unless we're using page_token without them
-    if not latitude or not longitude:
-        if not page_token:
-            return jsonify({"error": "Latitude and longitude required"}), 400
-    
+    """Get POPULAR nearby place recommendations using Yelp + OpenTripMap (Hybrid)"""
+    import sys
     try:
-        # Map of user-friendly names to Google Places API types
+        print("[RECOMMENDATIONS] === START ===", flush=True)
+        sys.stdout.flush()
+        data = request.json
+        print(f"[RECOMMENDATIONS] Received request data: {data}", flush=True)
+        sys.stdout.flush()
+        
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+        place_type = data.get('type', 'all')  # Default to all types
+        radius = data.get('radius', 5000)  # Default 5km radius
+        page_token = data.get('page_token')  # Legacy param (ignored for hybrid)
+        
+        if not latitude or not longitude:
+            print("[RECOMMENDATIONS] Missing latitude or longitude", flush=True)
+            return jsonify({"error": "Latitude and longitude required"}), 400
+        
+        lat = float(latitude)
+        lng = float(longitude)
+        radius = int(radius)
+        
+        print(f"[RECOMMENDATIONS] Parsed: lat={lat}, lng={lng}, radius={radius}m, type={place_type}", flush=True)
+        sys.stdout.flush()
+        
+        all_places = []
+        
+        # Map of user-friendly names to Yelp/OTM categories
+        # Format: (api_to_use, yelp_category, otm_kinds)
         type_mapping = {
-            'parks': 'park',
-            'museums': 'museum',
-            'restaurants': 'restaurant',
-            'cafes': 'cafe',
-            'shopping': 'shopping_mall',
-            'attractions': 'tourist_attraction',
-            'entertainment': 'amusement_park',
-            'nightlife': 'night_club',
-            'landmarks': 'point_of_interest',
-            'hikes': 'park',  # Parks often include hiking trails
-            'beaches': 'natural_feature',
-            'hotels': 'lodging',
-            'art': 'art_gallery',
-            'food': 'restaurant',
-            'nature': 'park',
-            'all': None  # No type filter for "all"
+            'parks': ('otm', None, 'natural'),  # FIXED: Parks should be OTM only (natural areas)
+            'museums': ('both', 'museums', 'museums'),
+            'restaurants': ('yelp', 'restaurants', None),
+            'cafes': ('yelp', 'cafes', None),
+            'shopping': ('yelp', 'shopping', None),  # FIXED: Remove 'other' from OTM
+            'attractions': ('otm', None, 'tourist_facilities,cultural,historic'),
+            'tourist_attraction': ('otm', None, 'tourist_facilities,cultural,historic'),  # NEW: Match common type
+            'entertainment': ('both', 'arts,entertainment', 'amusements'),
+            'nightlife': ('yelp', 'nightlife', None),
+            'landmarks': ('otm', None, 'historic,cultural'),  # FIXED: Remove natural (that's parks)
+            'hikes': ('otm', None, 'natural'),  # FIXED: Hiking should be OTM only
+            'hiking': ('otm', None, 'natural'),  # NEW: Alternative name
+            'beaches': ('otm', None, 'beaches'),
+            'beach': ('otm', None, 'beaches'),  # NEW: Singular form
+            'hotels': ('yelp', 'hotels', None),
+            'lodging': ('yelp', 'hotels', None),  # NEW: Alternative name
+            'art': ('both', 'arts', 'museums'),
+            'food': ('yelp', 'food,restaurants', None),
+            'nature': ('otm', None, 'natural'),
+            'all': ('both', None, 'interesting_places'),
+            'tourist_attractions': ('otm', None, 'tourist_facilities,cultural,historic')  # NEW
         }
         
-        # Get the API type from mapping, or use the provided type directly
-        api_type = type_mapping.get(place_type.lower(), place_type)
+        # Get API strategy
+        strategy = type_mapping.get(place_type.lower(), ('both', place_type, 'interesting_places'))
+        api_to_use, yelp_category, otm_kinds = strategy
         
-        # Search for nearby places
-        # For popular places, use rank_by='prominence' to get most popular first
-        if page_token:
-            # If page_token is provided, use it to get next page
-            places_result = gmaps.places_nearby(page_token=page_token)
-        elif api_type:
-            places_result = gmaps.places_nearby(
-                location=(latitude, longitude),
-                radius=radius,
-                type=api_type
-            )
-        else:
-            # For "all", search without type filter to get most popular places
-            places_result = gmaps.places_nearby(
-                location=(latitude, longitude),
-                radius=radius
-            )
+        print(f"[STRATEGY] {api_to_use} | Yelp: {yelp_category} | OTM: {otm_kinds}")
         
-        recommendations = []
-        origin = f"{latitude},{longitude}" if latitude and longitude else None
-        
-        if places_result.get('results'):
-            # Get all results (Google returns up to 20 per request)
-            results = places_result['results']
-            
-            print(f"📍 Fetching {len(results)} results for type '{place_type}' (API type: {api_type})")
-            
-            # Get place details including photos for each result
-            for place in results:
-                # Log place types for debugging
-                place_types = place.get('types', [])
-                print(f"  - {place.get('name')}: types = {place_types}")
-                place_location = place['geometry']['location']
-                destination = f"{place_location['lat']},{place_location['lng']}"
-                
-                # Calculate distance (if origin is available)
-                distance_text = "N/A"
-                duration_text = "N/A"
-                
-                if origin:
-                    distance_result = gmaps.distance_matrix(
-                        origins=origin,
-                        destinations=destination,
-                        mode='driving'
-                    )
-                    
-                    if distance_result['rows'] and distance_result['rows'][0]['elements']:
-                        element = distance_result['rows'][0]['elements'][0]
-                        if element['status'] == 'OK':
-                            distance_text = element['distance']['text']
-                            duration_text = element['duration']['text']
-                
-                # Get photo URL if available
-                photo_url = None
-                if place.get('photos') and len(place['photos']) > 0:
-                    photo_reference = place['photos'][0].get('photo_reference')
-                    if photo_reference:
-                        photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
-                
-                recommendation = {
-                    'place_id': place.get('place_id'),
-                    'name': place.get('name'),
-                    'address': place.get('vicinity', 'Address not available'),
-                    'rating': place.get('rating'),
-                    'user_ratings_total': place.get('user_ratings_total'),
-                    'types': place.get('types', []),
-                    'latitude': place_location['lat'],
-                    'longitude': place_location['lng'],
-                    'distance': distance_text,
-                    'duration': duration_text,
-                    'photo_url': photo_url,
-                    'open_now': place.get('opening_hours', {}).get('open_now')
+        # Query Yelp for POPULAR businesses (minimum 10 reviews)
+        if api_to_use in ['yelp', 'both'] and yelp_client and yelp_category:  # FIXED: Check yelp_category not None
+            try:
+                yelp_params = {
+                    'latitude': lat,
+                    'longitude': lng,
+                    'radius': min(radius, 40000),  # Yelp max is 40km
+                    'limit': 20,
+                    'sort_by': 'rating',  # Most popular
+                    'categories': yelp_category  # Always set category (we checked it's not None)
                 }
                 
+                yelp_results = yelp_client.search(**yelp_params)
+                
+                if yelp_results and 'businesses' in yelp_results:
+                    for business in yelp_results['businesses']:
+                        try:
+                            # Filter by minimum review count (popular only)
+                            if business.get('review_count', 0) >= 10:
+                                place = normalize_yelp_place(business)
+                                if place.get('lat') and place.get('lng'):
+                                    all_places.append(place)
+                        except Exception as e:
+                            print(f"[WARN] Error normalizing Yelp: {e}")
+                    
+                    print(f"[OK] Yelp: {len([p for p in all_places if p.get('source') == 'yelp'])} businesses")
+            except Exception as e:
+                print(f"[ERROR] Yelp error: {e}")
+        
+        # Query OpenTripMap for POPULAR attractions (rate >= 3)
+        if api_to_use in ['otm', 'both'] and otm_client and otm_kinds:
+            try:
+                print(f"[OTM] Calling API: lat={lat}, lng={lng}, kinds={otm_kinds}")
+                otm_results = otm_client.search_radius(
+                    latitude=lat,
+                    longitude=lng,
+                radius=radius,
+                    kinds=otm_kinds,
+                    rate=2,  # Lower threshold to get more results
+                    limit=50  # Increased limit
+                )
+                
+                print(f"[OTM] API returned: {type(otm_results)}, length={len(otm_results) if isinstance(otm_results, list) else 'N/A'}")
+                
+                if otm_results and isinstance(otm_results, list):
+                    for place in otm_results:
+                        try:
+                            if place.get('name') and place.get('rate', 0) >= 2:  # Lower threshold
+                                normalized = normalize_otm_place(place)
+                                all_places.append(normalized)
+                                print(f"  + Added: {place.get('name')} (rate: {place.get('rate')})")
+                        except Exception as e:
+                            print(f"[WARN] Error normalizing OTM: {e}")
+                            import traceback
+                            traceback.print_exc()
+                    
+                    print(f"[OK] OTM: {len([p for p in all_places if p.get('source') == 'opentripmap'])} places")
+                else:
+                    print(f"[WARN] OTM returned no results or invalid format")
+            except Exception as e:
+                print(f"[ERROR] OTM error: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # FALLBACK: If we got zero results and only tried OTM, try Yelp as backup
+        if len(all_places) == 0 and api_to_use == 'otm' and yelp_client:
+            print(f"[INFO] OpenTripMap returned 0 results, falling back to Yelp...")
+            try:
+                # Try Yelp with generic term search
+                yelp_params = {
+                    'latitude': lat,
+                    'longitude': lng,
+                    'radius': min(radius, 40000),
+                    'limit': 20,
+                    'sort_by': 'rating',
+                    'term': place_type  # Use the original search term
+                }
+                
+                yelp_results = yelp_client.search(**yelp_params)
+                
+                if yelp_results and 'businesses' in yelp_results:
+                    for business in yelp_results['businesses']:
+                        try:
+                            if business.get('review_count', 0) >= 10:
+                                place = normalize_yelp_place(business)
+                                if place.get('lat') and place.get('lng'):
+                                    all_places.append(place)
+                        except Exception as e:
+                            print(f"[WARN] Error normalizing Yelp (fallback): {e}")
+                    
+                    print(f"[OK] Yelp fallback: {len([p for p in all_places if p.get('source') == 'yelp'])} businesses")
+            except Exception as e:
+                print(f"[ERROR] Yelp fallback error: {e}")
+        
+        # Sort by popularity
+        all_places.sort(key=lambda x: x.get('popularity', 0), reverse=True)
+        
+        # Calculate distances in bulk (MUCH faster than one-by-one)
+        if osrm_client and len(all_places) > 0:
+            try:
+                print(f"[DISTANCE] Calculating distances for {len(all_places)} places in BULK...", flush=True)
+                
+                # Prepare all coordinates at once
+                origin_coords = [(lat, lng)]
+                dest_coords = []
+                valid_places = []
+                
+                for place in all_places:
+                    place_lat = place.get('lat')
+                    place_lng = place.get('lng')
+                    if place_lat and place_lng:
+                        dest_coords.append((place_lat, place_lng))
+                        valid_places.append(place)
+                
+                if dest_coords:
+                    # Single bulk API call instead of N individual calls
+                    result = osrm_client.distance_matrix(origin_coords, dest_coords)
+                    
+                    if result and 'distances' in result and 'durations' in result:
+                        distances = result['distances'][0]  # First (only) origin row
+                        durations = result['durations'][0]
+                        
+                        # Map results back to places
+                        for i, place in enumerate(valid_places):
+                            if i < len(distances):
+                                distance_m = distances[i]
+                                duration_s = durations[i] if i < len(durations) else None
+                                
+                                if distance_m and distance_m < 1000:
+                                    place['distance'] = f"{int(distance_m)} m"
+                                elif distance_m:
+                                    place['distance'] = f"{distance_m/1000:.1f} km"
+                                else:
+                                    place['distance'] = "N/A"
+                                
+                                if duration_s and duration_s < 60:
+                                    place['duration'] = f"{int(duration_s)} sec"
+                                elif duration_s:
+                                    place['duration'] = f"{int(duration_s/60)} min"
+                                else:
+                                    place['duration'] = "N/A"
+                            else:
+                                place['distance'] = "N/A"
+                                place['duration'] = "N/A"
+                        
+                        print(f"[DISTANCE] ✓ Calculated {len(valid_places)} distances in one call", flush=True)
+                    else:
+                        print(f"[WARN] Bulk distance matrix returned no results", flush=True)
+                        for place in all_places:
+                            place['distance'] = "N/A"
+                            place['duration'] = "N/A"
+                else:
+                    print(f"[WARN] No valid coordinates found in recommendations", flush=True)
+                    for place in all_places:
+                        place['distance'] = "N/A"
+                        place['duration'] = "N/A"
+            except Exception as e:
+                print(f"[ERROR] Bulk distance calculation failed: {e}", flush=True)
+                for place in all_places:
+                    place['distance'] = "N/A"
+                    place['duration'] = "N/A"
+        else:
+            # No OSRM client or no places
+            for place in all_places:
+                place['distance'] = "N/A"
+                place['duration'] = "N/A"
+        
+        # Convert to frontend format
+        recommendations = []
+        for place in all_places[:20]:  # Top 20 most popular
+                recommendation = {
+                    'place_id': place.get('place_id'),
+                'name': place.get('place_name'),
+                'address': place.get('address', 'Address not available'),
+                'rating': float(place.get('rating', 0)),
+                'user_ratings_total': place.get('review_count', 0),
+                'types': [place.get('category', 'place')],
+                'latitude': place.get('lat'),
+                'longitude': place.get('lng'),
+                'distance': place.get('distance', 'N/A'),
+                'duration': place.get('duration', 'N/A'),
+                'photo_url': place.get('image_url') or 'https://via.placeholder.com/400x250/1a1a2e/6366f1?text=No+Image',
+                'open_now': None  # Yelp/OTM don't provide real-time status
+            }
                 recommendations.append(recommendation)
         
-        # Get next_page_token if available
-        next_page_token = places_result.get('next_page_token')
+        print(f"[OK] Returning {len(recommendations)} POPULAR recommendations")
         
+        print(f"[RECOMMENDATIONS] Returning {len(recommendations)} recommendations")
         return jsonify({
             'recommendations': recommendations,
             'count': len(recommendations),
-            'next_page_token': next_page_token
+            'next_page_token': None  # No pagination for hybrid (returns top results)
         }), 200
         
     except Exception as e:
-        print(f"Error fetching recommendations: {e}")
-        return jsonify({"error": str(e)}), 500
+        print("[ERROR] Exception in get_recommendations:")
+        print(f"[ERROR] {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"{type(e).__name__}: {str(e)}"}), 500
 
 @app.route('/api/planner/items/<int:planner_id>', methods=['DELETE'])
 def delete_planner_item(planner_id):
@@ -4873,7 +5949,12 @@ def serve_catchall(path):
     return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
+    # Enable request logging
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    
     # Railway provides PORT environment variable
     port = int(os.getenv('PORT', 5000))
     # Use 0.0.0.0 to listen on all interfaces (required for Railway)
-    app.run(host='0.0.0.0', port=port, debug=False)
+    print(f"[SERVER] Starting on port {port}...")
+    app.run(host='0.0.0.0', port=port, debug=True)  # Enable debug for better error messages

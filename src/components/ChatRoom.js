@@ -1,42 +1,125 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { FaArrowLeft, FaPaperPlane, FaUsers } from 'react-icons/fa';
 import { useToast } from './ToastContext';
+import Layout from './Layout';
+import useIsMobile from '../hooks/useIsMobile';
 import './styles/ChatRoom.css';
 import API_URL from '../config';
+import { useSwipeable } from 'react-swipeable';
 
-const ChatRoom = ({ chat, onBack }) => {
+const ChatRoom = () => {
   const { showToast } = useToast();
+  const { groupId } = useParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isMobile = useIsMobile();
+  
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState('');
   const [loading, setLoading] = useState(true);
+  const [chatInfo, setChatInfo] = useState(null);
   
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const shouldScrollRef = useRef(true); // Track if we should auto-scroll
   
   const currentUser = JSON.parse(localStorage.getItem('user'));
   const currentUserId = currentUser.user_id;
+  const chatType = searchParams.get('type') || 'group';
+  const isDirect = chatType === 'direct';
 
   useEffect(() => {
-    fetchMessages();
+    if (!currentUserId) {
+      navigate('/login');
+      return;
+    }
+    fetchChatInfo();
+    shouldScrollRef.current = true; // Scroll on initial load
+    fetchMessages(true); // Show loading only on initial load
     inputRef.current?.focus();
-  }, [chat.chat_id]);
+    
+    // Poll for new messages (without showing loading spinner)
+    const interval = setInterval(() => fetchMessages(false), 3000);
+    return () => clearInterval(interval);
+  }, [groupId, currentUserId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (shouldScrollRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      shouldScrollRef.current = false; // Reset the flag after scrolling
+    }
   }, [messages]);
 
-  const fetchMessages = async () => {
-    setLoading(true);
+  const fetchChatInfo = async () => {
     try {
-      const response = await axios.get(
-        `${API_URL}/api/chats/${chat.chat_id}/messages?user_id=${currentUserId}`
-      );
+      if (isDirect) {
+        // For direct chats, we don't need to fetch chat info separately
+        // The chat info comes from the direct chats list
+        setChatInfo({
+          chat_name: 'Direct Message',
+          trip_name: 'Direct Message',
+          member_count: null
+        });
+      } else {
+        // For group chats, we need to get the trip info
+        // Since there's no groups endpoint, we'll use the trip endpoint
+        try {
+          const response = await axios.get(`${API_URL}/api/trips/${groupId}`);
+          setChatInfo({
+            trip_name: response.data.trip_name || 'Unknown Chat',
+            chat_name: response.data.trip_name || 'Unknown Chat',
+            member_count: response.data.member_count
+          });
+        } catch (groupError) {
+          // Fallback: Set basic chat info without making another API call
+          console.warn('Could not fetch trip info, using fallback');
+          setChatInfo({
+            chat_name: 'Group Chat',
+            trip_name: 'Group Chat',
+            member_count: null
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching chat info:", error);
+      // Set fallback chat info to allow chat to still work
+      setChatInfo({
+        chat_name: isDirect ? 'Direct Message' : 'Group Chat',
+        trip_name: isDirect ? 'Direct Message' : 'Group Chat',
+        member_count: null
+      });
+    }
+  };
+
+  const fetchMessages = async (showLoading = false) => {
+    if (showLoading) {
+      setLoading(true);
+    }
+    try {
+      const endpoint = isDirect 
+        ? `${API_URL}/api/chats/direct/${groupId}/messages?user_id=${currentUserId}`
+        : `${API_URL}/api/chats/${groupId}/messages?user_id=${currentUserId}`;
+      
+      const response = await axios.get(endpoint);
+      console.log('[ChatRoom] Fetched messages:', response.data.messages);
+      console.log('[ChatRoom] First message sample:', response.data.messages?.[0]);
       setMessages(response.data.messages || []);
-      setLoading(false);
+      
+      // If chat info is provided in the response (for direct chats), update it
+      if (response.data.chat_info) {
+        setChatInfo(response.data.chat_info);
+      }
+      
+      if (showLoading) {
+        setLoading(false);
+      }
     } catch (error) {
       console.error("Error fetching messages:", error);
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
   };
 
@@ -55,12 +138,20 @@ const ChatRoom = ({ chat, onBack }) => {
     
     setMessages([...messages, tempMessage]);
     setMessageText('');
+    shouldScrollRef.current = true; // Scroll when user sends a message
 
     try {
-      await axios.post(`${API_URL}/api/chats/${chat.chat_id}/messages`, {
+      const endpoint = isDirect
+        ? `${API_URL}/api/chats/direct/${groupId}/messages`
+        : `${API_URL}/api/chats/${groupId}/messages`;
+      
+      await axios.post(endpoint, {
+        sender_id: currentUserId,
         user_id: currentUserId,
-        message: tempMessage.message
+        message: tempMessage.message,
+        message_content: tempMessage.message
       });
+      fetchMessages();
     } catch (error) {
       console.error("Error sending message:", error);
       showToast('Failed to send message', 'error');
@@ -115,18 +206,32 @@ const ChatRoom = ({ chat, onBack }) => {
 
   const messageGroups = groupMessagesByDate();
 
-  return (
-    <div className="chatroom-container">
+  // Swipe handler for mobile - swipe right to go back
+  const swipeHandlers = useSwipeable({
+    onSwipedRight: () => {
+      if (isMobile) {
+        navigate('/chats');
+      }
+    },
+    preventDefaultTouchmoveEvent: false,
+    trackMouse: false,
+    delta: 50 // Require at least 50px swipe
+  });
+
+  const chatContent = (
+    <div {...(isMobile ? swipeHandlers : {})} className={`chatroom-container ${isMobile ? 'mobile-chatroom' : ''}`}>
       <div className="chatroom-header">
-        <button className="back-btn" onClick={onBack}>
+        <button className="back-btn" onClick={() => navigate('/chats')}>
           <FaArrowLeft />
         </button>
         <div className="chatroom-info">
-          <h2>{chat.trip_name}</h2>
-          <p className="chatroom-members">
-            <FaUsers />
-            {chat.member_count} members
-          </p>
+          <h2>{chatInfo?.trip_name || chatInfo?.chat_name || 'Chat'}</h2>
+          {!isDirect && chatInfo?.member_count && (
+            <p className="chatroom-members">
+              <FaUsers />
+              {chatInfo.member_count} members
+            </p>
+          )}
         </div>
       </div>
 
@@ -152,6 +257,15 @@ const ChatRoom = ({ chat, onBack }) => {
               {msgs.map((msg, index) => {
                 const isOwnMessage = msg.user_id === currentUserId;
                 const showSender = index === 0 || msgs[index - 1].user_id !== msg.user_id;
+                
+                if (index === 0) {
+                  console.log('[ChatRoom] Rendering message:', {
+                    message_id: msg.message_id,
+                    message: msg.message,
+                    user_id: msg.user_id,
+                    sent_at: msg.sent_at
+                  });
+                }
                 
                 return (
                   <div
@@ -193,6 +307,22 @@ const ChatRoom = ({ chat, onBack }) => {
         </button>
       </div>
     </div>
+  );
+
+  // On mobile, hide navbar when viewing individual chat
+  if (isMobile) {
+    return (
+      <Layout hideNavbar={true}>
+        {chatContent}
+      </Layout>
+    );
+  }
+
+  // On desktop, show navbar
+  return (
+    <Layout>
+      {chatContent}
+    </Layout>
   );
 };
 

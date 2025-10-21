@@ -14,16 +14,19 @@ import {
   FaTimesCircle,
   FaStar,
   FaFilter,
-  FaCalendarAlt,
-  FaEdit
+  FaEdit,
+  FaEye
 } from 'react-icons/fa';
+import useIsMobile from '../hooks/useIsMobile';
 import Layout from './Layout';
 import DateRangePicker from './DateRangePicker';
 import EditTripModal from './EditTripModal';
+import PlaceDetailsModal from './PlaceDetailsModal';
 import './styles/Planner.css';
 import API_URL from '../config';
 
 const Planner = () => {
+  const isMobile = useIsMobile();
   const [trips, setTrips] = useState([]);
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [plannerItems, setPlannerItems] = useState([]);
@@ -34,6 +37,9 @@ const Planner = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [autoScrollInterval, setAutoScrollInterval] = useState(null);
   const dragMouseY = useRef(0);
+  const distanceCalcTimeoutRef = useRef(null); // For debouncing distance calculations
+  const [loadingDistances, setLoadingDistances] = useState({});
+  const [loadingPhotos, setLoadingPhotos] = useState({});
   
   // Member management states
   const [tripMembers, setTripMembers] = useState([]);
@@ -92,6 +98,10 @@ const Planner = () => {
   // Edit dates modal state
   const [showEditDatesModal, setShowEditDatesModal] = useState(false);
   
+  // Place details modal state
+  const [showPlaceDetailsModal, setShowPlaceDetailsModal] = useState(false);
+  const [selectedPlaceDetails, setSelectedPlaceDetails] = useState(null);
+  
   // Sticky header state - track which destination header is sticky
   const [activeStickyDestination, setActiveStickyDestination] = useState(null);
 
@@ -134,6 +144,24 @@ const Planner = () => {
     
     fetchTrips();
   }, [currentUserId, navigate]);
+
+  // Handle opening trip modal from other pages
+  useEffect(() => {
+    // Check if we navigated here with openTripModal state
+    if (location.state?.openTripModal) {
+      setShowTripModal(true);
+      // Clear the state to prevent reopening on refresh
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+
+    // Listen for custom event from navbar + button
+    const handleOpenModal = () => {
+      setShowTripModal(true);
+    };
+    
+    window.addEventListener('openNewTripModal', handleOpenModal);
+    return () => window.removeEventListener('openNewTripModal', handleOpenModal);
+  }, [location, navigate]);
 
   // Intersection Observer to detect when sticky header is active
   useEffect(() => {
@@ -278,6 +306,18 @@ const Planner = () => {
       fetchFriendsForTrip();
     }
   }, [showTripModal, currentUserId]);
+
+  // Listen for "openNewTripModal" event from mobile navbar
+  useEffect(() => {
+    const handleOpenModal = () => {
+      if (currentUserId) {
+        setShowTripModal(true);
+      }
+    };
+
+    window.addEventListener('openNewTripModal', handleOpenModal);
+    return () => window.removeEventListener('openNewTripModal', handleOpenModal);
+  }, [currentUserId]);
   
   const fetchTripDestinations = async (tripId) => {
     try {
@@ -440,6 +480,20 @@ const Planner = () => {
   };
 
   // Create new trip
+  // Handle closing trip modal - navigate back on mobile if opened from another page
+  const handleCloseTripModal = () => {
+    setShowTripModal(false);
+    
+    // On mobile, if we came from another page, navigate back
+    if (isMobile) {
+      const returnPath = sessionStorage.getItem('returnPath');
+      if (returnPath && returnPath !== '/planner') {
+        sessionStorage.removeItem('returnPath');
+        navigate(returnPath);
+      }
+    }
+  };
+
   const handleCreateTrip = async () => {
     if (!tripForm.tripName.trim()) {
       showToast('Please enter a trip name', 'info');
@@ -529,7 +583,23 @@ const Planner = () => {
         setSelectedFriends([]);
         setFriendSearchQuery('');
         setShowAllFriends(false);
-        fetchTrips(); // Refresh trips
+        
+        // Refresh trips and select the new trip
+        await fetchTrips();
+        
+        // On mobile, navigate to the newly created trip
+        if (isMobile) {
+          // Wait a bit for trips to load, then select the new trip
+          setTimeout(() => {
+            const updatedTrips = trips.filter(t => t.trip_id === newTripId);
+            if (updatedTrips.length > 0) {
+              handleTripChange(updatedTrips[0]);
+            }
+          }, 500);
+        } else {
+          // On desktop, just select the trip
+          fetchTrips();
+        }
       } else {
         showToast(data.error || 'Failed to create trip', 'error');
       }
@@ -539,12 +609,58 @@ const Planner = () => {
     }
   };
 
+  // Debounced distance calculation function
+  const calculateDistances = (tripId) => {
+    // Clear any pending calculation
+    if (distanceCalcTimeoutRef.current) {
+      clearTimeout(distanceCalcTimeoutRef.current);
+    }
+    
+    // Debounce: Wait 300ms before calculating (in case of rapid changes)
+    distanceCalcTimeoutRef.current = setTimeout(() => {
+      console.log(`[DISTANCE] Triggering calculation for trip ${tripId}`);
+      axios.post(`${API_URL}/api/planner/${tripId}/calculate-distances`)
+        .then(res => {
+          console.log(`[DISTANCE] ✓ Successfully calculated ${res.data.updated} distances`);
+          // Clear all loading states
+          setLoadingDistances({});
+          // Refresh items to get updated distances (skip recalculation)
+          fetchPlannerItems(true, true);
+        })
+        .catch(err => {
+          console.error('[DISTANCE] ✗ Calculation failed:', err.response?.data || err.message);
+        });
+    }, 300);
+  };
+
   const fetchPlannerItems = async (skipDistanceCalc = false, skipPlaceIdFix = false) => {
     if (!selectedTrip) return;
     
+    console.log(`[FETCH] Fetching planner items for trip ${selectedTrip.trip_id}, skipDistanceCalc=${skipDistanceCalc}`);
+    
     try {
       const response = await axios.get(`${API_URL}/api/planner/${selectedTrip.trip_id}`);
-      setPlannerItems(response.data.items || []);
+      const items = response.data.items || [];
+      console.log(`[FETCH] Received ${items.length} items`);
+      
+      // Log distance info for debugging
+      items.forEach((item, idx) => {
+        if (item.distance_from_previous) {
+          console.log(`[FETCH] Item ${idx}: ${item.item_name} - ${item.distance_from_previous} / ${item.duration_from_previous}`);
+        }
+      });
+      
+      // Mark items with missing distances as loading
+      const distanceLoading = {};
+      items.forEach((item, idx) => {
+        if (idx > 0 && !item.distance_from_previous) {
+          distanceLoading[item.planner_id] = true;
+        }
+      });
+      setLoadingDistances(distanceLoading);
+      // Don't pre-set photo loading - let the image onLoad/onError handle it
+      
+      setPlannerItems(items);
       
       // Automatically fix missing Google Place IDs (only on first load)
       if (!skipPlaceIdFix) {
@@ -560,18 +676,9 @@ const Planner = () => {
         }
       }
       
-      // Calculate distances in background if not skipping
+      // Calculate distances in background if not skipping (with debouncing)
       if (!skipDistanceCalc) {
-        setTimeout(() => {
-          axios.post(`${API_URL}/api/planner/${selectedTrip.trip_id}/calculate-distances`)
-            .then(res => {
-              // Refresh items to get updated distances
-              fetchPlannerItems(true, true); // Skip distance calc and place ID fix on refresh
-            })
-            .catch(err => {
-              // Distance calculation failed or skipped
-            });
-        }, 100);
+        calculateDistances(selectedTrip.trip_id);
       }
     } catch (error) {
       console.error("Error fetching planner items:", error.response?.data || error.message);
@@ -851,22 +958,22 @@ const Planner = () => {
       // For "all" type, use "tourist_attraction" as fallback for better results
       const typeToSend = filterType === 'all' ? 'tourist_attraction' : filterType;
       
-      // Build request body based on whether we're using text search or nearby search
+      // Validate coordinates before making request
+      if (!latitude || !longitude) {
+        console.error('[RECOMMENDATIONS] Missing coordinates:', { latitude, longitude, locationName });
+        setLoadingRecommendations(prev => ({ ...prev, [day]: false }));
+        return;
+      }
+      
+      // Build request body - always send coordinates (backend requires them)
       const requestBody = {
-        type: typeToSend
+        type: typeToSend,
+        latitude: parseFloat(latitude),  // Ensure numeric
+        longitude: parseFloat(longitude),  // Ensure numeric
+        radius: 5000  // 5km for nearby places
       };
       
-      if (locationName) {
-        // Text-based search for popular places in the destination
-        requestBody.location_name = locationName;
-        requestBody.latitude = latitude;  // Still needed for distance calculations
-        requestBody.longitude = longitude;
-      } else {
-        // Nearby search for places near last item
-        requestBody.latitude = latitude;
-        requestBody.longitude = longitude;
-        requestBody.radius = 5000;  // 5km for nearby places
-      }
+      console.log('[RECOMMENDATIONS] Request body:', requestBody);
       
       const response = await axios.post(`${API_URL}/api/planner/recommendations`, requestBody);
       
@@ -904,6 +1011,15 @@ const Planner = () => {
     
     const filterType = selectedFilter[day] || 'all';
     setModalFilter(filterType);
+    
+    // Safety check: Ensure lastItem exists and has coordinates
+    if (!lastItem || !lastItem.latitude || !lastItem.longitude) {
+      console.error('No valid coordinates available for recommendations');
+      setLoadingModalRecommendations(false);
+      setModalRecommendations([]);
+      showToast('Unable to load recommendations. No location data available.', 'error');
+      return;
+    }
     
     // Store origin coordinates for pagination
     setModalOriginCoords({ latitude: lastItem.latitude, longitude: lastItem.longitude });
@@ -1056,6 +1172,8 @@ const Planner = () => {
         latitude: recommendation.latitude,
         longitude: recommendation.longitude,
         google_place_id: recommendation.place_id,
+        image_url: recommendation.photo_url || recommendation.image_url,
+        rating: recommendation.rating,
         created_by: currentUserId
       });
 
@@ -1257,6 +1375,41 @@ const Planner = () => {
     }
   };
 
+  // Open place details modal
+  const handlePlaceClick = (e, item) => {
+    // Prevent if clicking on drag handle or if dragging
+    if (e.target.closest('.item-drag-handle') || draggedItem) {
+      return;
+    }
+    
+    setSelectedPlaceDetails(item);
+    setShowPlaceDetailsModal(true);
+  };
+
+  const handleRecommendationClick = (recommendation, day) => {
+    // Format recommendation to match place structure
+    const placeData = {
+      item_name: recommendation.name,
+      name: recommendation.name,
+      location: recommendation.address,
+      address: recommendation.address,
+      rating: recommendation.rating,
+      photo_url: recommendation.photo_url || recommendation.photo,
+      photos: recommendation.photos || (recommendation.photo_url ? [recommendation.photo_url] : recommendation.photo ? [recommendation.photo] : []),
+      description: recommendation.editorial_summary || recommendation.description || '',
+      item_type: recommendation.type,
+      // Not in planner yet, so no planner_id or notes
+      planner_id: null,
+      notes: null,
+      start_time: null,
+      end_time: null,
+      cost: null
+    };
+    
+    setSelectedPlaceDetails(placeData);
+    setShowPlaceDetailsModal(true);
+  };
+
   const handleDragStart = (e, item) => {
     setDraggedItem(item);
     e.dataTransfer.effectAllowed = 'move';
@@ -1395,11 +1548,8 @@ const Planner = () => {
       axios.post(`${API_URL}/api/planner/items/reorder`, {
         items: itemsOrder
       }).then(() => {
-        // Trigger distance recalculation after reordering
-        return axios.post(`${API_URL}/api/planner/${selectedTrip.trip_id}/calculate-distances`);
-      }).then(() => {
-        // Refresh items to get updated distances
-        fetchPlannerItems(true); // Skip another distance calc
+        // Trigger distance recalculation after reordering (with debouncing)
+        calculateDistances(selectedTrip.trip_id);
       }).catch(error => {
         console.error("Error saving order:", error.response?.data || error.message);
       });
@@ -1558,11 +1708,11 @@ const Planner = () => {
 
         {/* Trip Creation Modal */}
         {showTripModal && (
-          <div className="trip-modal-overlay" onClick={() => setShowTripModal(false)}>
+          <div className="trip-modal-overlay" onClick={handleCloseTripModal}>
             <div className="trip-modal-content" onClick={(e) => e.stopPropagation()}>
               <div className="trip-modal-header">
                 <h2>Create New Trip</h2>
-                <button className="trip-modal-close" onClick={() => setShowTripModal(false)}>
+                <button className="trip-modal-close" onClick={handleCloseTripModal}>
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
                     <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1851,102 +2001,187 @@ const Planner = () => {
   return (
     <Layout>
       <div className="planner-page">
-        <div className="planner-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div className="trip-selector">
-            {/* Custom Dropdown - Closed State */}
-            <div 
-              className="dropdown-trigger"
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            >
-              <span>{selectedTrip?.trip_name || selectedTrip?.group_name || 'Select a trip'}</span>
-              <svg 
-                className={`dropdown-chevron ${isDropdownOpen ? 'open' : ''}`}
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24" 
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
-              </svg>
-            </div>
-
-            {/* Custom Dropdown - Open State */}
-            {isDropdownOpen && (
-              <div className="dropdown-menu">
-                {trips.map(trip => (
-                  <div
-                    key={trip.trip_id}
-                    className={`dropdown-item ${selectedTrip?.trip_id === trip.trip_id ? 'selected' : ''}`}
-                    onClick={() => {
-                      handleTripChange(trip);
-                      setIsDropdownOpen(false);
-                    }}
+        <div className={`planner-header ${isMobile ? 'mobile-planner-header' : ''}`}>
+          {isMobile ? (
+            // Mobile: Two-row layout
+            <>
+              {/* First row: Trip selector and Edit button */}
+              <div className="mobile-header-row-1">
+                <div className="trip-selector mobile-trip-selector">
+                  {/* Custom Dropdown - Closed State */}
+                  <div 
+                    className="dropdown-trigger"
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                   >
-                    <span>{trip.trip_name || trip.group_name}</span>
+                    <span>{selectedTrip?.trip_name || selectedTrip?.group_name || 'Select a trip'}</span>
+                    <svg 
+                      className={`dropdown-chevron ${isDropdownOpen ? 'open' : ''}`}
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24" 
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
                   </div>
-                ))}
-              </div>
-              )}
-            </div>
 
-            {/* New Trip Button */}
-            <button className="new-trip-btn" onClick={() => setShowTripModal(true)}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              New Trip
-            </button>
+                  {/* Custom Dropdown - Open State */}
+                  {isDropdownOpen && (
+                    <div className="dropdown-menu">
+                      {trips.map(trip => (
+                        <div
+                          key={trip.trip_id}
+                          className={`dropdown-item ${selectedTrip?.trip_id === trip.trip_id ? 'selected' : ''}`}
+                          onClick={() => {
+                            handleTripChange(trip);
+                            setIsDropdownOpen(false);
+                          }}
+                        >
+                          <span>{trip.trip_name || trip.group_name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-            {/* Edit Trip Button - Only show for owners/admins */}
-            {selectedTrip && (currentUserRole === 'owner' || currentUserRole === 'admin') && (
-              <button 
-                className="edit-trip-planner-btn" 
-                onClick={() => setShowEditDatesModal(true)}
-                title="Edit trip"
-              >
-                <FaEdit />
-                Edit Trip
-              </button>
-            )}
-          </div>
-
-          {/* Member list display */}
-          {selectedTrip && tripMembers.length > 0 && (
-            <div className="trip-members-display">
-              <div className="member-avatars">
-                {tripMembers.slice(0, 5).map(member => (
-                  <div key={member.user_id} className="member-avatar" title={`${member.first_name} ${member.last_name}`}>
-                    {member.first_name?.[0]}{member.last_name?.[0]}
-                  </div>
-                ))}
-                {tripMembers.length > 5 && (
+                {/* Edit Trip Button - Only show for owners/admins */}
+                {selectedTrip && (currentUserRole === 'owner' || currentUserRole === 'admin') && (
                   <button 
-                    className="more-members-btn"
-                    onClick={() => {
-                      setShowMembersModal(true);
-                      fetchPendingRequests(selectedTrip.trip_id);
-                    }}
-                    title={`View all ${tripMembers.length} members`}
+                    className="edit-trip-planner-btn mobile-edit-btn" 
+                    onClick={() => setShowEditDatesModal(true)}
+                    title="Edit trip"
                   >
-                    +{tripMembers.length - 5}
+                    <FaEdit />
+                    Edit
                   </button>
                 )}
               </div>
-              {tripMembers.length <= 5 && (
-                <button 
-                  className="manage-members-icon-btn"
-                  onClick={() => {
-                    setShowMembersModal(true);
-                    fetchPendingRequests(selectedTrip.trip_id);
-                  }}
-                  title="Manage members"
-                >
-                  <FaUsers />
-                </button>
+
+              {/* Second row: Member list display - Compact mobile version */}
+              {selectedTrip && tripMembers.length > 0 && (
+                <div className="mobile-header-row-2">
+                  <div className="trip-members-display mobile-members-display">
+                    <div className="member-avatars">
+                      {tripMembers.slice(0, 3).map(member => (
+                        <div key={member.user_id} className="member-avatar" title={`${member.first_name} ${member.last_name}`}>
+                          {member.first_name?.[0]}{member.last_name?.[0]}
+                        </div>
+                      ))}
+                      {/* Replace +X indicator with manage button */}
+                      <button 
+                        className="manage-members-icon-btn mobile-manage-btn-avatar"
+                        onClick={() => {
+                          setShowMembersModal(true);
+                          fetchPendingRequests(selectedTrip.trip_id);
+                        }}
+                        title="Manage members"
+                      >
+                        <FaUsers />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
-            </div>
+            </>
+          ) : (
+            // Desktop: Original layout
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div className="trip-selector">
+                  {/* Custom Dropdown - Closed State */}
+                  <div 
+                    className="dropdown-trigger"
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  >
+                    <span>{selectedTrip?.trip_name || selectedTrip?.group_name || 'Select a trip'}</span>
+                    <svg 
+                      className={`dropdown-chevron ${isDropdownOpen ? 'open' : ''}`}
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24" 
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                  </div>
+
+                  {/* Custom Dropdown - Open State */}
+                  {isDropdownOpen && (
+                    <div className="dropdown-menu">
+                      {trips.map(trip => (
+                        <div
+                          key={trip.trip_id}
+                          className={`dropdown-item ${selectedTrip?.trip_id === trip.trip_id ? 'selected' : ''}`}
+                          onClick={() => {
+                            handleTripChange(trip);
+                            setIsDropdownOpen(false);
+                          }}
+                        >
+                          <span>{trip.trip_name || trip.group_name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <button className="new-trip-btn" onClick={() => setShowTripModal(true)}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                  New Trip
+                </button>
+
+                {/* Edit Trip Button - Only show for owners/admins */}
+                {selectedTrip && (currentUserRole === 'owner' || currentUserRole === 'admin') && (
+                  <button 
+                    className="edit-trip-planner-btn" 
+                    onClick={() => setShowEditDatesModal(true)}
+                    title="Edit trip"
+                  >
+                    <FaEdit />
+                    Edit Trip
+                  </button>
+                )}
+              </div>
+
+              {/* Member list display */}
+              {selectedTrip && tripMembers.length > 0 && (
+                <div className="trip-members-display">
+                  <div className="member-avatars">
+                    {tripMembers.slice(0, 5).map(member => (
+                      <div key={member.user_id} className="member-avatar" title={`${member.first_name} ${member.last_name}`}>
+                        {member.first_name?.[0]}{member.last_name?.[0]}
+                      </div>
+                    ))}
+                    {tripMembers.length > 5 && (
+                      <button 
+                        className="more-members-btn"
+                        onClick={() => {
+                          setShowMembersModal(true);
+                          fetchPendingRequests(selectedTrip.trip_id);
+                        }}
+                        title={`View all ${tripMembers.length} members`}
+                      >
+                        +{tripMembers.length - 5}
+                      </button>
+                    )}
+                  </div>
+                  {tripMembers.length <= 5 && (
+                    <button 
+                      className="manage-members-icon-btn"
+                      onClick={() => {
+                        setShowMembersModal(true);
+                        fetchPendingRequests(selectedTrip.trip_id);
+                      }}
+                      title="Manage members"
+                    >
+                      <FaUsers />
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
         
@@ -2049,25 +2284,43 @@ const Planner = () => {
                             onDrop={(e) => handleDayDrop(e, day)}
                           >
                     <div className={`day-header ${activeStickyDestination === group.destination?.destination_id ? 'hidden-by-sticky' : ''}`}>
-                      <h3>{formatDayName(day)}</h3>
-                      <div className="day-actions">
-                        <button 
-                          className="search-places-btn"
-                          onClick={() => handleSearchPlaces(day)}
-                          title="Search and add places to this day"
-                        >
-                          <FaSearch />
-                          Search & Add Places
-                        </button>
-                        <button 
-                          className="add-custom-btn"
-                          onClick={() => handleAddCustomLocation(day)}
-                          title="Add custom item"
-                        >
-                          <FaPlus />
-                          Custom
-                        </button>
-                      </div>
+                      {isMobile ? (
+                        // Mobile: Centered date format with only Search button
+                        <>
+                          <h3 className="mobile-day-title">{formatDayName(day)}</h3>
+                          <button 
+                            className="search-places-btn mobile-search-btn"
+                            onClick={() => handleSearchPlaces(day)}
+                            title="Search and add places to this day"
+                          >
+                            <FaSearch />
+                            Search & Add Places
+                          </button>
+                        </>
+                      ) : (
+                        // Desktop: Original layout
+                        <>
+                          <h3>{formatDayName(day)}</h3>
+                          <div className="day-actions">
+                            <button 
+                              className="search-places-btn"
+                              onClick={() => handleSearchPlaces(day)}
+                              title="Search and add places to this day"
+                            >
+                              <FaSearch />
+                              Search & Add Places
+                            </button>
+                            <button 
+                              className="add-custom-btn"
+                              onClick={() => handleAddCustomLocation(day)}
+                              title="Add custom item"
+                            >
+                              <FaPlus />
+                              Custom
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                     
                     <div className="day-items">
@@ -2086,21 +2339,26 @@ const Planner = () => {
                                       ? dragPosition === 'above' ? 'drag-over-above' : 'drag-over-below'
                                       : ''
                                   }`}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, item)}
-                            onDragEnd={handleDragEnd}
-                                  onDragOver={(e) => handleItemDragOver(e, item)}
-                                  onDrop={(e) => handleItemDrop(e, item, day)}
+                            draggable={!isMobile}
+                            onDragStart={(e) => !isMobile && handleDragStart(e, item)}
+                            onDragEnd={!isMobile ? handleDragEnd : undefined}
+                                  onDragOver={(e) => !isMobile && handleItemDragOver(e, item)}
+                                  onDrop={(e) => !isMobile && handleItemDrop(e, item, day)}
+                                  onClick={(e) => handlePlaceClick(e, item)}
                           >
                                   {/* Distance info - clean style like the reference */}
-                              {globalIndex > 0 && hasDistance && (
+                              {globalIndex > 0 && (
                                     <div className="distance-info-bar">
                                       <svg className="distance-car-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M16,6l3,4h2c1.11,0,2,0.89,2,2v3h-2c0,1.66-1.34,3-3,3s-3-1.34-3-3H9c0,1.66-1.34,3-3,3s-3-1.34-3-3H1v-3c0-1.11,0.89-2,2-2
                                       l3-4H16 M10.5,7.5H6.75L4.86,10h5.64V7.5 M12,7.5V10h5.14l-1.89-2.5H12 M6,13.5c-0.83,0-1.5,0.67-1.5,1.5s0.67,1.5,1.5,1.5
                                       s1.5-0.67,1.5-1.5S6.83,13.5,6,13.5 M18,13.5c-0.83,0-1.5,0.67-1.5,1.5s0.67,1.5,1.5,1.5s1.5-0.67,1.5-1.5S18.83,13.5,18,13.5z"/>
                                   </svg>
-                                      <span className="distance-text">{item.duration_from_previous} • {item.distance_from_previous} from {item.from_location}</span>
+                                      {loadingDistances[item.planner_id] ? (
+                                        <span className="distance-skeleton"></span>
+                                      ) : hasDistance ? (
+                                        <span className="distance-text">{item.duration_from_previous} • {item.distance_from_previous} from {item.from_location}</span>
+                                      ) : null}
                               </div>
                             )}
                             
@@ -2109,60 +2367,104 @@ const Planner = () => {
                               </div>
                               {item.photo_url && (
                                 <div className="item-photo">
-                                  <img src={item.photo_url} alt={item.item_name} />
+                                  <img 
+                                    src={item.photo_url} 
+                                    alt={item.item_name}
+                                    onLoad={(e) => {
+                                      // Image loaded successfully - remove any skeleton
+                                      setLoadingPhotos(prev => {
+                                        const updated = {...prev};
+                                        delete updated[item.planner_id];
+                                        return updated;
+                                      });
+                                      e.target.style.opacity = '1';
+                                    }}
+                                    onError={(e) => {
+                                      // Image failed to load - remove skeleton and show broken image
+                                      setLoadingPhotos(prev => {
+                                        const updated = {...prev};
+                                        delete updated[item.planner_id];
+                                        return updated;
+                                      });
+                                      e.target.style.opacity = '1';
+                                    }}
+                                    style={{ 
+                                      opacity: loadingPhotos[item.planner_id] ? '0' : '1',
+                                      transition: 'opacity 0.3s ease'
+                                    }}
+                                  />
+                                  {loadingPhotos[item.planner_id] && (
+                                    <div className="photo-skeleton"></div>
+                                  )}
                                 </div>
                               )}
                               <div className="item-content">
-                                <div className="item-header">
+                                {isMobile ? (
+                                  // Mobile: Show only name and location
+                                  <div className="item-header">
                                     <h4>{item.item_name}</h4>
-                                    <input
-                                      type="text"
+                                    {item.location && (
+                                      <div className="item-location">
+                                        <FaMapMarkerAlt />
+                                        {item.location}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  // Desktop: Show all details
+                                  <>
+                                    <div className="item-header">
+                                      <h4>{item.item_name}</h4>
+                                      <input
+                                        type="text"
                                         className="item-note-inline"
-                                      value={item.notes || ''}
-                                      onChange={(e) => handleNoteChange(item.planner_id, e.target.value)}
-                                      placeholder="Add note..."
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                  <button 
-                                    className="delete-item-btn"
-                                    onClick={() => handleDeleteItem(item.planner_id)}
-                                    title="Delete Item"
-                                  >
-                                    <FaTrash />
-                                  </button>
-                                </div>
-                                
-                                {item.item_type !== 'custom' && (
-                                  <div className="item-type-badge">
-                                    {item.item_type}
-                                  </div>
-                                )}
-                                
-                                {(item.start_time || item.end_time) && (
-                                  <div className="item-time">
-                                    {formatTime(item.start_time)}
-                                    {item.start_time && item.end_time && ' - '}
-                                    {formatTime(item.end_time)}
-                                  </div>
-                                )}
-                                
-                                {item.location && (
-                                  <div className="item-location">
-                                    <FaMapMarkerAlt />
-                                    {item.location}
-                                  </div>
-                                )}
-                                
-                                {item.description && (
-                                  <div className="item-description">
-                                    {item.description}
-                                  </div>
-                                )}
-                                
-                                {item.cost && (
-                                  <div className="item-cost">
-                                    ${item.cost}
-                                  </div>
+                                        value={item.notes || ''}
+                                        onChange={(e) => handleNoteChange(item.planner_id, e.target.value)}
+                                        placeholder="Add note..."
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                      <button 
+                                        className="delete-item-btn"
+                                        onClick={() => handleDeleteItem(item.planner_id)}
+                                        title="Delete Item"
+                                      >
+                                        <FaTrash />
+                                      </button>
+                                    </div>
+                                    
+                                    {item.item_type !== 'custom' && (
+                                      <div className="item-type-badge">
+                                        {item.item_type}
+                                      </div>
+                                    )}
+                                    
+                                    {(item.start_time || item.end_time) && (
+                                      <div className="item-time">
+                                        {formatTime(item.start_time)}
+                                        {item.start_time && item.end_time && ' - '}
+                                        {formatTime(item.end_time)}
+                                      </div>
+                                    )}
+                                    
+                                    {item.location && (
+                                      <div className="item-location">
+                                        <FaMapMarkerAlt />
+                                        {item.location}
+                                      </div>
+                                    )}
+                                    
+                                    {item.description && (
+                                      <div className="item-description">
+                                        {item.description}
+                                      </div>
+                                    )}
+                                    
+                                    {item.cost && (
+                                      <div className="item-cost">
+                                        ${item.cost}
+                                      </div>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             </div>
@@ -2241,7 +2543,11 @@ const Planner = () => {
                           <>
                             <div className="recommendations-scroll">
                               {recommendations[day].slice(0, 6).map((rec, idx) => (
-                                <div key={idx} className="recommendation-card">
+                                <div 
+                                  key={idx} 
+                                  className="recommendation-card"
+                                  onClick={() => handleRecommendationClick(rec, day)}
+                                >
                                   {rec.photo_url && (
                                     <div className="rec-image" style={{ backgroundImage: `url(${rec.photo_url})` }}>
                                       {rec.rating && (
@@ -2253,7 +2559,11 @@ const Planner = () => {
                                   )}
                                   <div className="rec-content">
                                     <h5 className="rec-name">{rec.name}</h5>
-                                    <p className="rec-distance">{rec.distance.replace(' away', '').replace(' ', '')} • {rec.duration}</p>
+                                    {rec.distance && rec.duration && rec.distance !== 'N/A' && rec.duration !== 'N/A' ? (
+                                      <p className="rec-distance">{rec.distance.replace(' away', '').replace(' ', '')} • {rec.duration}</p>
+                                    ) : (
+                                      <span className="distance-skeleton" style={{ marginBottom: '0.25rem' }}></span>
+                                    )}
                                     <p className="rec-address">{rec.address}</p>
                                   </div>
                                   <button className="add-rec-btn-circular" onClick={(e) => {
@@ -2264,8 +2574,23 @@ const Planner = () => {
                                   </button>
                                 </div>
                               ))}
+                              
+                              {/* Mobile: View All as a card at the end */}
+                              {isMobile && recommendations[day].length > 6 && (
+                                <div 
+                                  className="recommendation-card view-all-card"
+                                  onClick={() => handleShowMoreRecommendations(day, dayItems[dayItems.length - 1])}
+                                >
+                                  <div className="view-all-content">
+                                    <FaEye className="view-all-icon" />
+                                    <h5 className="view-all-text">View All</h5>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                            {recommendations[day].length > 6 && (
+                            
+                            {/* Desktop: View All button */}
+                            {!isMobile && recommendations[day].length > 6 && (
                               <button 
                                 className="show-more-btn"
                                 onClick={() => handleShowMoreRecommendations(day, dayItems[dayItems.length - 1])}
@@ -2542,7 +2867,11 @@ const Planner = () => {
                   ))
                 ) : modalRecommendations.length > 0 ? (
                   getDisplayableRecommendations(modalRecommendations).map((rec, idx) => (
-                    <div key={idx} className="recommendation-card modal-rec-card">
+                    <div 
+                      key={idx} 
+                      className="recommendation-card modal-rec-card"
+                      onClick={() => handleRecommendationClick(rec, modalDay)}
+                    >
                       {rec.photo_url && (
                         <div className="rec-image" style={{ backgroundImage: `url(${rec.photo_url})` }}>
                           {rec.rating && (
@@ -2554,7 +2883,11 @@ const Planner = () => {
                       )}
                       <div className="rec-content">
                         <h5 className="rec-name">{rec.name}</h5>
-                        <p className="rec-distance">{rec.distance.replace(' away', '').replace(' ', '')} • {rec.duration}</p>
+                        {rec.distance && rec.duration && rec.distance !== 'N/A' && rec.duration !== 'N/A' ? (
+                          <p className="rec-distance">{rec.distance.replace(' away', '').replace(' ', '')} • {rec.duration}</p>
+                        ) : (
+                          <span className="distance-skeleton" style={{ marginBottom: '0.25rem' }}></span>
+                        )}
                         <p className="rec-address">{rec.address}</p>
                       </div>
                       <button 
@@ -2595,11 +2928,11 @@ const Planner = () => {
 
       {/* Trip Creation Modal */}
       {showTripModal && (
-        <div className="trip-modal-overlay" onClick={() => setShowTripModal(false)}>
+        <div className="trip-modal-overlay" onClick={handleCloseTripModal}>
           <div className="trip-modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="trip-modal-header">
               <h2>Create New Trip</h2>
-              <button className="trip-modal-close" onClick={() => setShowTripModal(false)}>
+              <button className="trip-modal-close" onClick={handleCloseTripModal}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -2858,6 +3191,20 @@ const Planner = () => {
           }}
         />
       )}
+
+      {/* Place Details Modal */}
+      <PlaceDetailsModal
+        isOpen={showPlaceDetailsModal}
+        onClose={() => {
+          setShowPlaceDetailsModal(false);
+          setSelectedPlaceDetails(null);
+        }}
+        place={selectedPlaceDetails}
+        onDelete={handleDeleteItem}
+        onUpdate={handleNoteChange}
+        isEditable={selectedPlaceDetails?.planner_id ? true : false}
+        showDeleteButton={selectedPlaceDetails?.planner_id ? true : false}
+      />
     </Layout>
   );
 };

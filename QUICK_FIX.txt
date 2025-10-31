@@ -1,0 +1,42 @@
+================================================================================
+                    🚨 GOOGLE API QUICK FIX - READ THIS FIRST 🚨
+================================================================================
+
+YOUR ISSUE:
+-----------
+✓ API key is valid and loaded correctly
+✗ Google Cloud APIs are NOT ENABLED (This is the problem!)
+
+THE 5-MINUTE FIX (NO MAPS NEEDED):
+-----------------------------------
+
+1. Go to: https://console.cloud.google.com/apis/library
+
+2. Search and click "ENABLE" on each of these 3 APIs:
+   
+   ✅ Places API (REQUIRED - for autocomplete, place search)
+   ✅ Geocoding API (REQUIRED - for address to coordinates)
+   ✅ Distance Matrix API (REQUIRED - for distance calculations)
+   
+   Note: You DON'T need Maps JavaScript API since you're not displaying maps
+
+3. Go to: https://console.cloud.google.com/apis/credentials
+   - Click your API key
+   - Under "API restrictions" → Choose "Don't restrict key"
+   - Click SAVE
+
+4. WAIT 2-5 MINUTES for changes to activate
+
+5. TEST IT:
+   .\venv\Scripts\python.exe test_api_key.py
+   
+   Should see: [OK] API Connection Successful!
+
+6. START YOUR APP:
+   .\venv\Scripts\python.exe App.py
+
+THAT'S IT! Your autocomplete and place search will now work.
+
+================================================================================
+Need detailed help? Read: GOOGLE_API_SETUP.md
+================================================================================

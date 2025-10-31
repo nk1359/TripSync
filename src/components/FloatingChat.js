@@ -5,6 +5,7 @@ import './styles/FloatingChat.css';
 import API_URL from '../config';
 
 const FloatingChat = () => {
+  const [isMobile, setIsMobile] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [chats, setChats] = useState([]);
   const [friends, setFriends] = useState([]);
@@ -22,6 +23,18 @@ const FloatingChat = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const currentUser = JSON.parse(localStorage.getItem('user')) || {};
+
+  // Mobile detection
+  useEffect(() => {
+    const checkMobile = () => {
+      const width = window.innerWidth <= 768;
+      const userAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      setIsMobile(width || userAgent);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     if (currentUser.user_id) {
@@ -224,6 +237,11 @@ const FloatingChat = () => {
       friend.username?.toLowerCase().includes(searchLower)
     );
   });
+
+  // Don't render FloatingChat on mobile
+  if (isMobile) {
+    return null;
+  }
 
   return (
     <>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { AuthContext } from './AuthContext';
 import { useToast } from './ToastContext';
+import { useTripModal } from './TripModalContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   FaUser, 
@@ -21,13 +22,14 @@ import './styles/Layout.css';
 import API_URL from '../config';
 
 const Layout = ({ children }) => {
+  const { showTripModal } = useTripModal();
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useContext(AuthContext); 
   const { showToast } = useToast();
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [isMobile, setIsMobile] = useState(false);
 
   // Refs for handling outside clicks
   const sidebarRef = useRef(null);
@@ -38,6 +40,19 @@ const Layout = ({ children }) => {
   // Notification state
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Enhanced mobile detection - screen width + device type
+  useEffect(() => {
+    const checkMobile = () => {
+      const width = window.innerWidth <= 768;
+      const userAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      setIsMobile(width || userAgent);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Fetch all notifications
   useEffect(() => {
@@ -47,6 +62,15 @@ const Layout = ({ children }) => {
       return () => clearInterval(interval);
     }
   }, [user]);
+
+  // Fetch unread count for mobile
+  useEffect(() => {
+    if (user?.user_id && isMobile) {
+      fetchUnreadCount();
+      const interval = setInterval(fetchUnreadCount, 10000); // Refresh every 10 seconds
+      return () => clearInterval(interval);
+    }
+  }, [user, isMobile]);
 
   const fetchNotifications = () => {
     if (!user?.user_id) return;
@@ -97,6 +121,26 @@ const Layout = ({ children }) => {
   const handleSignOut = () => {
     logout();
     navigate('/');
+  };
+
+  // Fetch unread count for mobile bottom nav indicator
+  const fetchUnreadCount = async () => {
+    if (!user || !isMobile) return;
+    
+    try {
+      const response = await axios.get(`${API_URL}/api/chats/user/${user.user_id}`);
+      const chats = response.data.chats || [];
+      const directResponse = await axios.get(`${API_URL}/api/chats/direct/user/${user.user_id}`);
+      const directChats = directResponse.data.chats || [];
+      
+      const totalUnread = [...chats, ...directChats].reduce((total, chat) => {
+        return total + (chat.unread_count || 0);
+      }, 0);
+      
+      setUnreadCount(totalUnread);
+    } catch (error) {
+      console.error('Error fetching unread count:', error);
+    }
   };
 
   // Navigation items - show different items based on auth status
@@ -267,14 +311,19 @@ const Layout = ({ children }) => {
         })
         .catch(err => console.error(err));
       
-      // Open the chat
-      window.dispatchEvent(new CustomEvent('openChat', { 
-        detail: { 
-          chat_id: notification.chat_id,
-          chat_name: notification.chat_name,
-          is_direct: notification.chat_type === 'direct'
-        } 
-      }));
+      if (isMobile) {
+        // On mobile, navigate to the chat room
+        navigate(`/chat/${notification.chat_type}/${notification.chat_id}`);
+      } else {
+        // On desktop, open the floating chat
+        window.dispatchEvent(new CustomEvent('openChat', { 
+          detail: { 
+            chat_id: notification.chat_id,
+            chat_name: notification.chat_name,
+            is_direct: notification.chat_type === 'direct'
+          } 
+        }));
+      }
       setShowNotifications(false);
     }
   };
@@ -321,7 +370,7 @@ const Layout = ({ children }) => {
         <div className="top-bar">
           <div className="left-area">
             <div className="app-logo" onClick={handleLogoClick} style={{ cursor: 'pointer' }}>
-              <img src="/Trip Sync.png" alt="TripSync" className="logo-image" />
+              <img src="/Ravyn-Green.png" alt="TripSync" className="logo-image" />
             </div>
             <div className="logo-separator"></div>
           </div>
@@ -581,6 +630,66 @@ const Layout = ({ children }) => {
         <div className="content">
           {children}
         </div>
+        
+        {/* Bottom Navigation - Mobile Only */}
+        {isMobile && user && (
+          <div className={`bottom-nav ${showTripModal ? 'modal-open' : ''}`}>
+            <button 
+              onClick={() => handleNavigation('/')} 
+              className={`bottom-nav-btn ${location.pathname === '/' ? 'active' : ''} ${showTripModal ? 'blurred' : ''}`}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill={location.pathname === '/' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5">
+                <path d="M19.0167 7.1419C19.6261 7.50161 20 8.15658 20 8.86423V18.0001C20 19.1047 19.1046 20.0001 18 20.0001H16C14.8954 20.0001 14 19.1047 14 18.0001V14C14 12.8955 13.1046 12 12 12V12C10.8954 12 10 12.8955 10 14V18.0001C10 19.1047 9.10457 20.0001 8 20.0001H6C4.89543 20.0001 4 19.1047 4 18.0001V8.86423C4 8.15658 4.37395 7.50161 4.98335 7.1419L10.9833 3.60023C11.6106 3.23 12.3894 3.23 13.0167 3.60023L19.0167 7.1419Z" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+            <button 
+              onClick={() => handleNavigation('/planner')} 
+              className={`bottom-nav-btn ${location.pathname === '/planner' ? 'active' : ''} ${showTripModal ? 'blurred' : ''}`}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill={location.pathname === '/planner' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5">
+                <path d="M7 3V5M17 3V5M6.2 21H17.8C18.9201 21 19.4802 21 19.908 20.782C20.2843 20.5903 20.5903 20.2843 20.782 19.908C21 19.4802 21 18.9201 21 17.8V8.2C21 7.07989 21 6.51984 20.782 6.09202C20.5903 5.71569 20.2843 5.40973 19.908 5.21799C19.4802 5 18.9201 5 17.8 5H6.2C5.0799 5 4.51984 5 4.09202 5.21799C3.71569 5.40973 3.40973 5.71569 3.21799 6.09202C3 6.51984 3 7.07989 3 8.2V17.8C3 18.9201 3 19.4802 3.21799 19.908C3.40973 20.2843 3.71569 20.5903 4.09202 20.782C4.51984 21 5.07989 21 6.2 21Z" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M3 9H21M6 13H8M6 17H8M11 13H13M11 17H13M16 13H18M16 17H18" stroke={location.pathname === '/planner' ? '#18181b' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+            <button 
+              onClick={() => {
+                if (showTripModal) {
+                  // Close modal
+                  window.dispatchEvent(new CustomEvent('closeCreateTripModal'));
+                } else {
+                  // Open modal
+                  window.dispatchEvent(new CustomEvent('openCreateTripModal'));
+                }
+              }} 
+              className={`bottom-nav-btn create-btn ${showTripModal ? 'close-mode' : ''}`}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <line x1="12" y1="5" x2="12" y2="19" className="line-vertical"></line>
+                <line x1="5" y1="12" x2="19" y2="12" className="line-horizontal"></line>
+              </svg>
+            </button>
+            <button 
+              onClick={() => handleNavigation('/chats')} 
+              className={`bottom-nav-btn ${location.pathname.startsWith('/chat') ? 'active' : ''} ${showTripModal ? 'blurred' : ''}`}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill={location.pathname.startsWith('/chat') ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5">
+                <path d="M21 20L17.6757 18.3378C17.4237 18.2118 17.2977 18.1488 17.1656 18.1044C17.0484 18.065 16.9277 18.0365 16.8052 18.0193C16.6672 18 16.5263 18 16.2446 18H6.2C5.07989 18 4.51984 18 4.09202 17.782C3.71569 17.5903 3.40973 17.2843 3.21799 16.908C3 16.4802 3 15.9201 3 14.8V7.2C3 6.07989 3 5.51984 3.21799 5.09202C3.40973 4.71569 3.71569 4.40973 4.09202 4.21799C4.51984 4 5.0799 4 6.2 4H17.8C18.9201 4 19.4802 4 19.908 4.21799C20.2843 4.40973 20.5903 4.71569 20.782 5.09202C21 5.51984 21 6.0799 21 7.2V20Z" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M7 9H17M7 13H12" stroke={location.pathname.startsWith('/chat') ? '#18181b' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              {unreadCount > 0 && (
+                <span className="bottom-nav-indicator"></span>
+              )}
+            </button>
+            <button 
+              onClick={() => handleNavigation('/friends')} 
+              className={`bottom-nav-btn ${location.pathname === '/friends' ? 'active' : ''} ${showTripModal ? 'blurred' : ''}`}
+            >
+              <svg width="24" height="24" viewBox="-80 0 1440 1024" fill={location.pathname === '/friends' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="60">
+                <path d="M384 512c123.8 0 224-100.2 224-224S507.8 64 384 64 160 164.2 160 288s100.2 224 224 224z m153.6 64h-16.6c-41.6 20-87.8 32-137 32s-95.2-12-137-32h-16.6C103.2 576 0 679.2 0 806.4V864c0 53 43 96 96 96h576c53 0 96-43 96-96v-57.6c0-127.2-103.2-230.4-230.4-230.4zM960 512c106 0 192-86 192-192s-86-192-192-192-192 86-192 192 86 192 192 192z m96 64h-7.6c-27.8 9.6-57.2 16-88.4 16s-60.6-6.4-88.4-16H864c-40.8 0-78.4 11.8-111.4 30.8 48.8 52.6 79.4 122.4 79.4 199.6v76.8c0 4.4-1 8.6-1.2 12.8H1184c53 0 96-43 96-96 0-123.8-100.2-224-224-224z" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        )}
       </main>
     </div>
   );

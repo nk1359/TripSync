@@ -1052,12 +1052,237 @@
 }
 
 @media (max-width: 768px) {
+  /* Remove tap highlight on mobile */
+  * {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+  
+  /* Allow text selection for input fields */
+  input, textarea {
+    -webkit-user-select: text;
+    -khtml-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+  }
+  
+  /* Mobile: Adjust for smaller navbar */
+  .home-page {
+    padding: 60px 0 0 0 !important;
+  }
+  
   .hero-title {
     font-size: 2.5rem;
   }
   
   .hero-subtitle {
     font-size: 1rem;
+  }
+  
+  /* Mobile: Hide "Learn More" button */
+  .hero-secondary-button {
+    display: none;
+  }
+  
+  /* Mobile: Make "Start Exploring" button longer and thinner */
+  .hero-search-button {
+    padding: 0.625rem 3rem;
+    font-size: 0.9375rem;
+    width: auto;
+  }
+  
+  /* Mobile: places-container padding */
+  .places-container {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  
+  /* Mobile: trips-container padding */
+  .trips-container {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+  
+  /* Mobile: Clean trips dashboard */
+  .trips-dashboard {
+    border: 0 !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    margin: -100px 0 3rem 0 !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  
+  .trips-header {
+    margin-bottom: 12px !important;
+    padding-bottom: 8px !important;
+    border-bottom: none;
+  }
+  
+  .trips-header-content {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  
+  .new-trip-btn {
+    padding: 14px !important;
+  }
+  
+  /* Mobile: Trips grid almost touching edges */
+  .trips-grid {
+    gap: 0 !important;
+    padding: 0;
+  }
+  
+  /* Mobile: Trip cards touch each other */
+  .trip-card {
+    padding: 0.5rem 0 !important;
+    border-radius: 0 !important;
+    border: 1px solid #3f3f46;
+    border-bottom: none;
+    margin: 0 !important;
+  }
+  
+  /* Mobile: First card has top rounded corners */
+  .trip-card:first-child {
+    border-radius: 12px 12px 0 0 !important;
+  }
+  
+  /* Mobile: Last card has bottom rounded corners and border */
+  .trip-card:last-child {
+    border-radius: 0 0 12px 12px !important;
+    border-bottom: 1px solid #3f3f46;
+  }
+  
+  /* Mobile: Single card has all rounded corners */
+  .trip-card:first-child:last-child {
+    border-radius: 12px !important;
+    border-bottom: 1px solid #3f3f46;
+  }
+  
+  /* Mobile: Remove ALL hover effects */
+  .trip-card:hover {
+    background: #27272a !important;
+    border-color: #3f3f46 !important;
+    transform: none !important;
+  }
+  
+  .trip-card:hover .trip-arrow {
+    color: #52525b !important;
+    transform: none !important;
+  }
+  
+  .trip-options-menu {
+    top: 0.5rem;
+    right: 0.25rem;
+  }
+  
+  .trip-title {
+    font-size: 0.9375rem;
+  }
+  
+  /* Mobile: Much smaller icon container */
+  .trip-icon-container {
+    width: 32px;
+    height: 32px;
+  }
+  
+  .trip-icon-container svg {
+    width: 16px;
+    height: 16px;
+  }
+  
+  /* Mobile: Reduce gap between card elements */
+  .trip-card {
+    gap: 0.5rem !important;
+  }
+  
+  /* Mobile: Add padding to content area */
+  .trip-card-content {
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
+  
+  .trip-icon-container {
+    margin-left: 0.625rem;
+  }
+  
+  /* Mobile: Much smaller options button */
+  .trip-options-btn {
+    width: 16px !important;
+    height: 16px !important;
+  }
+  
+  .trip-options-btn svg {
+    width: 3px !important;
+    height: 12px !important;
+  }
+  
+  .trip-options-btn:hover {
+    background: transparent !important;
+  }
+  
+  /* Mobile: Dropdown positioning */
+  .trip-dropdown {
+    top: 24px;
+    right: 0;
+  }
+  
+  /* Mobile: Much smaller owner badge */
+  .owner-badge {
+    padding: 0.125rem 0.375rem !important;
+    font-size: 0.5625rem !important;
+    border-radius: 3px !important;
+    font-weight: 700 !important;
+  }
+  
+  /* Mobile: Smaller trip title */
+  .trip-title {
+    font-size: 0.875rem !important;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+  
+  /* Mobile: Compact meta spacing */
+  .trip-meta {
+    gap: 0.75rem;
+    margin-bottom: 0;
+  }
+  
+  .trip-title-row {
+    gap: 0.5rem;
+    margin-bottom: 0.375rem;
+  }
+  
+  .trip-date-info,
+  .trip-member-info-btn {
+    font-size: 0.6875rem;
+  }
+  
+  .trip-date-info svg,
+  .trip-member-info-btn svg {
+    width: 12px;
+    height: 12px;
+  }
+  
+  .trip-member-info-btn {
+    padding: 0.25rem 0.5rem;
+  }
+  
+  .trip-description-text {
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
   }
   
   .places-grid {
@@ -1391,6 +1616,7 @@
   display: flex;
   align-items: center;
   gap: 1.25rem;
+  position: relative;
 }
 
 .trip-card:hover {
@@ -1539,6 +1765,85 @@
 .trip-card:hover .trip-arrow {
   color: #a1a1aa;
   transform: translateX(4px);
+}
+
+.trip-options-menu {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
+}
+
+.trip-options-btn {
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.trip-options-btn:hover {
+  color: #ffffff;
+}
+
+.trip-dropdown {
+  position: absolute;
+  top: 32px;
+  right: 0;
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  min-width: 160px;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  overflow: hidden;
+  animation: dropdownSlideIn 0.2s ease-out;
+  transform-origin: top right;
+}
+
+@keyframes dropdownSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.trip-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  color: #e4e4e7;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.trip-dropdown button:hover {
+  background: #3f3f46;
+}
+
+.trip-dropdown button:first-child {
+  border-radius: 8px 8px 0 0;
+}
+
+.trip-dropdown button:last-child {
+  border-radius: 0 0 8px 8px;
 }
 
 .trip-card-actions {
@@ -1722,6 +2027,51 @@
   margin-bottom: 0.625rem;
 }
 
+/* Floating Label Styles */
+.floating-label-container {
+  position: relative;
+  margin-bottom: 1.5rem;
+}
+
+.floating-label {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #1f1f23;
+  padding: 0 0.25rem;
+  color: #71717a;
+  font-size: 0.875rem;
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1;
+}
+
+.floating-label-container textarea ~ .floating-label {
+  top: 1.5rem;
+  transform: translateY(0);
+}
+
+.floating-input:focus ~ .floating-label,
+.floating-input:not(:placeholder-shown) ~ .floating-label,
+.floating-label.active {
+  top: 0;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.floating-input {
+  padding: 1rem;
+}
+
+.floating-input::placeholder {
+  color: transparent !important;
+  opacity: 0 !important;
+}
+
+
 .select-wrapper {
   position: relative;
   width: 100%;
@@ -1804,6 +2154,96 @@
   background: #1f1f23;
 }
 
+/* Friends Invitation Box */
+.friends-invitation-box {
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.friends-box-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  user-select: none;
+}
+
+.friends-box-header:hover {
+  background: #2a2a2e;
+}
+
+.friends-box-header span {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.chevron-icon {
+  color: #a1a1aa;
+  transition: transform 0.3s ease;
+  flex-shrink: 0;
+}
+
+.chevron-icon.expanded {
+  transform: rotate(180deg);
+}
+
+.friends-box-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.friends-box-content.expanded {
+  max-height: 600px;
+  padding: 0 1rem 1rem 1rem;
+}
+
+.friends-box-content.collapsed {
+  max-height: 0;
+  padding: 0 1rem;
+}
+
+/* Friend Search Input */
+.friend-search-input-wrapper {
+  position: relative;
+  margin-bottom: 1rem;
+}
+
+.friend-search-icon {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #a1a1aa;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.friend-search-input {
+  width: 100%;
+  padding: 0.75rem 2.5rem 0.75rem 1rem;
+  background: #1f1f23;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 0.875rem;
+  transition: border-color 0.2s ease;
+}
+
+.friend-search-input:focus {
+  outline: none;
+  border-color: #52525b;
+}
+
+.friend-search-input::placeholder {
+  color: #71717a;
+}
+
 /* Friends Selection Grid */
 .friends-selection-grid {
   display: grid;
@@ -1871,10 +2311,11 @@
 }
 
 .selected-friends-count {
-  margin-top: 0.5rem;
+  margin-top: 0.75rem;
   font-size: 0.8125rem;
   color: #a1a1aa;
   font-weight: 500;
+  text-align: center;
 }
 
 .show-more-friends-btn {
@@ -1887,6 +2328,7 @@
   font-size: 0.875rem;
   cursor: pointer;
   transition: all 0.2s ease;
+  margin-top: 0.75rem;
 }
 
 .show-more-friends-btn:hover {
@@ -2141,6 +2583,108 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 0.5rem;
+  }
+
+  /* Mobile Trip Modal Styles */
+  .trip-modal-overlay.mobile {
+    align-items: flex-start;
+    background: rgba(0, 0, 0, 0.4);
+    animation: fadeIn 0.3s ease;
+    padding-bottom: 80px;
+  }
+  
+  .trip-modal-overlay.mobile::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 80px;
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .trip-modal-content.mobile {
+    width: calc(100% - 2rem);
+    max-width: calc(100% - 2rem);
+    height: 65vh;
+    max-height: 65vh;
+    border-radius: 20px;
+    border: 1px solid #3f3f46;
+    animation: slideUp 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+    margin: auto 1rem 1rem 1rem;
+    transition: max-height 0.3s cubic-bezier(0.32, 0.72, 0, 1), height 0.3s cubic-bezier(0.32, 0.72, 0, 1), transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .trip-modal-content.mobile.dragging {
+    transition: none;
+  }
+
+  .trip-modal-content.mobile.expanded {
+    height: calc(100vh - 80px - 5vh);
+    max-height: calc(100vh - 80px - 5vh);
+  }
+
+  @keyframes slideUp {
+    0% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .mobile-modal-handle-container {
+    padding: 1rem 1rem 0.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border-bottom: 1px solid #3f3f46;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+    min-height: 60px;
+  }
+
+  .mobile-modal-handle-container:active {
+    cursor: grabbing;
+  }
+
+  .mobile-modal-handle {
+    width: 40px;
+    height: 4px;
+    background: #52525b;
+    border-radius: 2px;
+    margin-bottom: 0.75rem;
+    transition: background 0.2s ease;
+  }
+
+  .mobile-modal-handle-container:active .mobile-modal-handle {
+    background: #71717a;
+  }
+
+  .mobile-modal-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #f8fafc;
+    margin: 0;
+    text-align: center;
+  }
+
+  .trip-modal-header {
+    display: none;
   }
 
   .trip-title {

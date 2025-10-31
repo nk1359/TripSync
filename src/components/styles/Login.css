@@ -27,8 +27,11 @@
 }
 
 .auth-logo-image {
-  height: 80px;
+  max-height: 120px;
+  max-width: 100%;
   width: auto;
+  height: auto;
+  object-fit: contain;
 }
 
 /* === Tabs === */
@@ -199,6 +202,6 @@
   }
 
   .auth-logo-image {
-    height: 48px;
+    max-height: 80px;
   }
 }

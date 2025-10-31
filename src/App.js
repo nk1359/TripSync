@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { useContext } from 'react';
 import { AuthContext } from './components/AuthContext';
 import { ToastProvider } from './components/ToastContext';
+import { TripModalProvider } from './components/TripModalContext';
 import FloatingChat from './components/FloatingChat';
 import Login from './components/Login';
 import Home from './components/Home';
@@ -26,20 +27,22 @@ function App() {
   return (
     <ToastProvider>
       <Router>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/search" element={<Search />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/chats" element={user ? <Chats /> : <Navigate to="/" replace />} />
-          <Route path="/chats/:groupId" element={user ? <ChatRoom /> : <Navigate to="/" replace />} />
-          <Route path="/planner" element={user ? <Planner /> : <Navigate to="/" replace />} />
-          <Route path="/friends" element={user ? <Friends /> : <Navigate to="/" replace />} />
+        <TripModalProvider>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/search" element={<Search />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/chats" element={user ? <Chats /> : <Navigate to="/" replace />} />
+            <Route path="/chat/:type/:chatId" element={user ? <Chats /> : <Navigate to="/" replace />} />
+            <Route path="/planner" element={user ? <Planner /> : <Navigate to="/" replace />} />
+            <Route path="/friends" element={user ? <Friends /> : <Navigate to="/" replace />} />
+            
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
           
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-        
-        {/* FloatingChat persists across all pages */}
-        {user && <FloatingChat />}
+          {/* FloatingChat persists across all pages */}
+          {user && <FloatingChat />}
+        </TripModalProvider>
       </Router>
     </ToastProvider>
   );
